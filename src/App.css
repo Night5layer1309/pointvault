@@ -1,0 +1,888 @@
+import React, { useEffect, useMemo, useState } from "react";
+import {
+  Search,
+  MapPin,
+  Plus,
+  Navigation,
+  Filter,
+  WifiOff,
+  CheckCircle2,
+  AlertTriangle,
+  XCircle,
+  Clock,
+  Database,
+  Layers,
+  Crosshair,
+  Download,
+  Upload,
+  Save,
+  List,
+  Map,
+  LocateFixed,
+} from "lucide-react";
+import { motion } from "framer-motion";
+import { MapContainer, Marker, Popup, TileLayer, useMap } from "react-leaflet";
+import L from "leaflet";
+import "leaflet/dist/leaflet.css";
+import { Card, CardContent } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { supabase } from "@/lib/supabaseClient";
+
+const STORAGE_KEY = "pointvault-survey-points-v2";
+const USER_LOCATION_KEY = "pointvault-last-user-location-v1";
+
+const seedPoints = [
+  {
+    id: "CP-102",
+    name: "CP-102 - 5/8\" Rebar w/ Cap",
+    status: "found",
+    reliability: "A",
+    lat: 35.467821,
+    lng: -97.516431,
+    northing: "712345.22",
+    easting: "2189432.87",
+    coordinateSystem: "State Plane NAD83",
+    job: "Smith Farm ALTA",
+    county: "Logan County",
+    crew: "Crew 3",
+    lastFound: "2025-03-14",
+    description: "5/8 inch rebar with yellow cap. Located 0.4 ft south of old fence corner. Good condition.",
+    observations: [
+      {
+        date: "2025-03-14",
+        crew: "Crew 3",
+        status: "found",
+        note: "Easy access from gravel drive. Witness photo shows red gate to the east.",
+        synced: true,
+      },
+    ],
+    photos: [],
+  },
+  {
+    id: "BM-14",
+    name: "BM-14 - Chiseled Square",
+    status: "found",
+    reliability: "B",
+    lat: 35.463244,
+    lng: -97.521118,
+    northing: "711882.08",
+    easting: "2188022.44",
+    coordinateSystem: "State Plane NAD83",
+    job: "County Road 18 ROW",
+    county: "Logan County",
+    crew: "Crew 1",
+    lastFound: "2024-09-02",
+    description: "Chiseled square on north headwall of concrete culvert.",
+    observations: [
+      {
+        date: "2024-09-02",
+        crew: "Crew 1",
+        status: "found",
+        note: "Vegetation heavy in summer. Benchmark appears stable.",
+        synced: true,
+      },
+    ],
+    photos: [],
+  },
+  {
+    id: "IP-77",
+    name: "IP-77 - Iron Pin Record Only",
+    status: "record",
+    reliability: "C",
+    lat: 35.471201,
+    lng: -97.511004,
+    northing: "712889.91",
+    easting: "2190041.31",
+    coordinateSystem: "State Plane NAD83",
+    job: "Harris Boundary",
+    county: "Oklahoma County",
+    crew: "Unknown",
+    lastFound: "2018-06-21",
+    description: "Record location from prior survey. No recent recovery information.",
+    observations: [
+      {
+        date: "2018-06-21",
+        crew: "Unknown",
+        status: "record",
+        note: "Needs verification before relying on this point.",
+        synced: true,
+      },
+    ],
+    photos: [],
+  },
+  {
+    id: "CP-209",
+    name: "CP-209 - Mag Nail",
+    status: "suspect",
+    reliability: "D",
+    lat: 35.459881,
+    lng: -97.52671,
+    northing: "711420.73",
+    easting: "2187331.10",
+    coordinateSystem: "State Plane NAD83",
+    job: "Industrial Park Phase II",
+    county: "Oklahoma County",
+    crew: "Crew 2",
+    lastFound: "2023-12-08",
+    description: "Mag nail near asphalt seam. Position may have shifted after pavement work.",
+    observations: [
+      {
+        date: "2023-12-08",
+        crew: "Crew 2",
+        status: "suspect",
+        note: "Do not use without independent check. Conflicts with 2021 recovery by 0.28 ft.",
+        synced: true,
+      },
+    ],
+    photos: [],
+  },
+  {
+    id: "MON-33",
+    name: "MON-33 - Destroyed Monument",
+    status: "destroyed",
+    reliability: "X",
+    lat: 35.475411,
+    lng: -97.530112,
+    northing: "713201.01",
+    easting: "2186998.54",
+    coordinateSystem: "State Plane NAD83",
+    job: "Lakeview Addition",
+    county: "Logan County",
+    crew: "Crew 4",
+    lastFound: "2024-04-19",
+    description: "Original monument destroyed during driveway replacement.",
+    observations: [
+      {
+        date: "2024-04-19",
+        crew: "Crew 4",
+        status: "destroyed",
+        note: "Use adjacent ties only. Homeowner confirmed construction in 2024.",
+        synced: true,
+      },
+    ],
+    photos: [],
+  },
+];
+
+const statusMeta = {
+  found: {
+    label: "Found",
+    icon: CheckCircle2,
+    badge: "bg-emerald-100 text-emerald-800 border-emerald-200",
+    color: "#10b981",
+  },
+  suspect: {
+    label: "Suspect",
+    icon: AlertTriangle,
+    badge: "bg-amber-100 text-amber-800 border-amber-200",
+    color: "#f59e0b",
+  },
+  destroyed: {
+    label: "Destroyed",
+    icon: XCircle,
+    badge: "bg-red-100 text-red-800 border-red-200",
+    color: "#ef4444",
+  },
+  record: {
+    label: "Record Only",
+    icon: Clock,
+    badge: "bg-slate-100 text-slate-700 border-slate-200",
+    color: "#64748b",
+  },
+};
+
+const blankPoint = {
+  id: "",
+  name: "",
+  status: "found",
+  reliability: "B",
+  lat: "",
+  lng: "",
+  northing: "",
+  easting: "",
+  coordinateSystem: "State Plane NAD83",
+  job: "",
+  county: "",
+  crew: "",
+  lastFound: new Date().toISOString().slice(0, 10),
+  description: "",
+  observations: [],
+  photos: [],
+};
+
+function loadPoints() {
+  try {
+    const saved = localStorage.getItem(STORAGE_KEY);
+    if (!saved) return seedPoints;
+    const parsed = JSON.parse(saved);
+    return Array.isArray(parsed) && parsed.length ? parsed : seedPoints;
+  } catch {
+    return seedPoints;
+  }
+}
+
+function loadLastUserLocation() {
+  try {
+    const saved = localStorage.getItem(USER_LOCATION_KEY);
+    if (!saved) return null;
+    const parsed = JSON.parse(saved);
+    if (typeof parsed?.lat === "number" && typeof parsed?.lng === "number") return parsed;
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+function downloadJson(filename, data) {
+  const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = filename;
+  link.click();
+  URL.revokeObjectURL(url);
+}
+
+function toRad(degrees) {
+  return (degrees * Math.PI) / 180;
+}
+
+function distanceFeet(a, b) {
+  if (!a || !b) return null;
+  const lat1 = Number(a.lat);
+  const lon1 = Number(a.lng);
+  const lat2 = Number(b.lat);
+  const lon2 = Number(b.lng);
+  if ([lat1, lon1, lat2, lon2].some((value) => Number.isNaN(value))) return null;
+
+  const earthRadiusFeet = 20902231;
+  const dLat = toRad(lat2 - lat1);
+  const dLon = toRad(lon2 - lon1);
+  const h =
+    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+    Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) *
+      Math.sin(dLon / 2) * Math.sin(dLon / 2);
+  return 2 * earthRadiusFeet * Math.asin(Math.sqrt(h));
+}
+
+function formatDistance(feet) {
+  if (feet === null || Number.isNaN(feet)) return "--";
+  if (feet < 1000) return `${Math.round(feet).toLocaleString()} ft`;
+  return `${(feet / 5280).toFixed(2)} mi`;
+}
+
+function pointIcon(status, selected = false) {
+  const color = (statusMeta[status] || statusMeta.record).color;
+  const size = selected ? 22 : 16;
+  return L.divIcon({
+    className: "pointvault-marker",
+    html: `<div style="width:${size}px;height:${size}px;background:${color};border:3px solid white;border-radius:999px;box-shadow:0 3px 10px rgba(15,23,42,.35);"></div>`,
+    iconSize: [size, size],
+    iconAnchor: [size / 2, size / 2],
+  });
+}
+
+const userIcon = L.divIcon({
+  className: "pointvault-user-marker",
+  html: `<div style="width:22px;height:22px;background:#2563eb;border:4px solid white;border-radius:999px;box-shadow:0 0 0 10px rgba(37,99,235,.18),0 3px 10px rgba(15,23,42,.35);"></div>`,
+  iconSize: [22, 22],
+  iconAnchor: [11, 11],
+});
+
+function StatusBadge({ status }) {
+  const meta = statusMeta[status] || statusMeta.record;
+  const Icon = meta.icon;
+  return (
+    <span className={`inline-flex items-center gap-1 rounded-full border px-2 py-1 text-xs font-semibold ${meta.badge}`}>
+      <Icon size={13} />
+      {meta.label}
+    </span>
+  );
+}
+
+function ReliabilityBadge({ rating }) {
+  return (
+    <span className="rounded-full border border-slate-200 bg-white px-2 py-1 text-xs font-semibold text-slate-700">
+      Reliability {rating || "?"}
+    </span>
+  );
+}
+
+function RecenterMap({ center, zoom }) {
+  const map = useMap();
+  useEffect(() => {
+    if (center) map.setView(center, zoom || map.getZoom(), { animate: true });
+  }, [center, zoom, map]);
+  return null;
+}
+
+function GisMap({ points, selectedPoint, userLocation, followUser, onSelectPoint }) {
+  const fallbackCenter = [35.467821, -97.516431];
+  const center = userLocation ? [userLocation.lat, userLocation.lng] : fallbackCenter;
+
+  return (
+    <Card className="overflow-hidden rounded-3xl border-0 shadow-lg">
+      <CardContent className="relative h-[420px] p-0">
+        <MapContainer center={center} zoom={15} className="h-full w-full" scrollWheelZoom>
+          <TileLayer
+            attribution='&copy; OpenStreetMap contributors'
+            url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+          />
+          {followUser && userLocation && <RecenterMap center={[userLocation.lat, userLocation.lng]} zoom={16} />}
+          {userLocation && (
+            <Marker position={[userLocation.lat, userLocation.lng]} icon={userIcon}>
+              <Popup>
+                <strong>You are here</strong><br />
+                Accuracy: {userLocation.accuracy ? Math.round(userLocation.accuracy) + " ft" : "unknown"}
+              </Popup>
+            </Marker>
+          )}
+          {points.map((point) => {
+            if (!point.lat || !point.lng) return null;
+            const selected = selectedPoint?.id === point.id;
+            return (
+              <Marker
+                key={point.id}
+                position={[Number(point.lat), Number(point.lng)]}
+                icon={pointIcon(point.status, selected)}
+                eventHandlers={{ click: () => onSelectPoint(point) }}
+              >
+                <Popup>
+                  <div className="min-w-48">
+                    <strong>{point.id}</strong><br />
+                    {point.name}<br />
+                    <span>{formatDistance(point.distanceFeet)} away</span>
+                  </div>
+                </Popup>
+              </Marker>
+            );
+          })}
+        </MapContainer>
+      </CardContent>
+    </Card>
+  );
+}
+
+function PointCard({ point, selected, onClick }) {
+  return (
+    <button onClick={() => onClick(point)} className="w-full text-left">
+      <Card className={`rounded-3xl border transition ${selected ? "border-blue-400 shadow-lg" : "border-slate-200 shadow-sm hover:shadow-md"}`}>
+        <CardContent className="p-4">
+          <div className="flex items-start justify-between gap-3">
+            <div>
+              <div className="font-bold text-slate-950">{point.id}</div>
+              <div className="mt-1 text-sm text-slate-600">{point.name || point.description || "Unnamed point"}</div>
+            </div>
+            <div className="text-right text-sm font-semibold text-slate-700">{formatDistance(point.distanceFeet)}</div>
+          </div>
+          <div className="mt-3 flex flex-wrap gap-2">
+            <StatusBadge status={point.status} />
+            <ReliabilityBadge rating={point.reliability} />
+          </div>
+          <div className="mt-3 flex items-center gap-2 text-xs text-slate-500">
+            <MapPin size={13} />
+            {point.job || "No job"} · {point.county || "No county"}
+          </div>
+        </CardContent>
+      </Card>
+    </button>
+  );
+}
+
+function PointDetail({ point, onUpdatePoint }) {
+  const [newNote, setNewNote] = useState("");
+  const [newStatus, setNewStatus] = useState(point.status || "found");
+
+  useEffect(() => {
+    setNewStatus(point.status || "found");
+    setNewNote("");
+  }, [point.id, point.status]);
+
+  const addObservation = () => {
+    if (!newNote.trim()) return;
+    const today = new Date().toISOString().slice(0, 10);
+    const observation = {
+      date: today,
+      crew: point.crew || "Field Crew",
+      status: newStatus,
+      note: newNote.trim(),
+      synced: false,
+    };
+    onUpdatePoint({
+      ...point,
+      status: newStatus,
+      lastFound: newStatus === "found" ? today : point.lastFound,
+      observations: [observation, ...(point.observations || [])],
+    });
+    setNewNote("");
+  };
+
+  const openNavigation = () => {
+    if (!point.lat || !point.lng) return;
+    window.open(`https://www.google.com/maps/search/?api=1&query=${point.lat},${point.lng}`, "_blank");
+  };
+
+  const copyCoordinates = async () => {
+    const text = `Point: ${point.id}
+Lat/Long: ${point.lat}, ${point.lng}
+N/E: ${point.northing}, ${point.easting}
+System: ${point.coordinateSystem}`;
+    await navigator.clipboard?.writeText(text);
+  };
+
+  return (
+    <motion.div initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.22 }}>
+      <Card className="rounded-3xl border-0 shadow-xl">
+        <CardContent className="p-5">
+          <div className="flex items-start justify-between gap-3">
+            <div>
+              <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">Selected Point</div>
+              <h2 className="mt-1 text-2xl font-black text-slate-950">{point.id}</h2>
+              <p className="mt-1 text-sm text-slate-600">{point.name}</p>
+            </div>
+            <ReliabilityBadge rating={point.reliability} />
+          </div>
+
+          <div className="mt-4 flex flex-wrap gap-2">
+            <StatusBadge status={point.status} />
+            <span className="rounded-full border border-blue-200 bg-blue-50 px-2 py-1 text-xs font-semibold text-blue-800">
+              {formatDistance(point.distanceFeet)} away
+            </span>
+            <span className="rounded-full border border-slate-200 bg-slate-50 px-2 py-1 text-xs font-semibold text-slate-700">
+              Last found {point.lastFound || "unknown"}
+            </span>
+          </div>
+
+          <div className="mt-5 grid grid-cols-2 gap-3 text-sm">
+            <div className="rounded-2xl bg-slate-50 p-3">
+              <div className="text-xs font-semibold uppercase text-slate-400">Latitude</div>
+              <div className="mt-1 font-bold text-slate-900">{point.lat}</div>
+            </div>
+            <div className="rounded-2xl bg-slate-50 p-3">
+              <div className="text-xs font-semibold uppercase text-slate-400">Longitude</div>
+              <div className="mt-1 font-bold text-slate-900">{point.lng}</div>
+            </div>
+            <div className="rounded-2xl bg-slate-50 p-3">
+              <div className="text-xs font-semibold uppercase text-slate-400">Northing</div>
+              <div className="mt-1 font-bold text-slate-900">{point.northing}</div>
+            </div>
+            <div className="rounded-2xl bg-slate-50 p-3">
+              <div className="text-xs font-semibold uppercase text-slate-400">Easting</div>
+              <div className="mt-1 font-bold text-slate-900">{point.easting}</div>
+            </div>
+          </div>
+
+          <div className="mt-4 rounded-2xl bg-slate-50 p-4">
+            <div className="text-xs font-semibold uppercase tracking-wide text-slate-400">Description</div>
+            <p className="mt-2 text-sm leading-6 text-slate-700">{point.description}</p>
+          </div>
+
+          <div className="mt-4 grid grid-cols-2 gap-2">
+            <Button onClick={openNavigation} className="rounded-2xl py-5">
+              <Navigation size={16} className="mr-1" /> Navigate
+            </Button>
+            <Button onClick={copyCoordinates} variant="secondary" className="rounded-2xl py-5">
+              <Database size={16} className="mr-1" /> Copy Coords
+            </Button>
+          </div>
+
+          <div className="mt-5 rounded-3xl border border-slate-200 bg-white p-3">
+            <div className="mb-2 font-bold text-slate-900">Add Observation</div>
+            <select
+              value={newStatus}
+              onChange={(event) => setNewStatus(event.target.value)}
+              className="mb-2 w-full rounded-2xl border border-slate-200 bg-white px-3 py-3 text-sm outline-none focus:border-blue-400"
+            >
+              <option value="found">Found</option>
+              <option value="suspect">Suspect</option>
+              <option value="record">Record Only</option>
+              <option value="destroyed">Destroyed</option>
+            </select>
+            <textarea
+              value={newNote}
+              onChange={(event) => setNewNote(event.target.value)}
+              placeholder="Add field note, condition, witness ties, access info..."
+              className="min-h-24 w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm outline-none focus:border-blue-400"
+            />
+            <Button onClick={addObservation} className="mt-2 w-full rounded-2xl py-5">
+              <Save size={16} className="mr-2" /> Save Observation Locally
+            </Button>
+          </div>
+
+          <div className="mt-5">
+            <div className="mb-2 flex items-center justify-between">
+              <div className="font-bold text-slate-900">Observation History</div>
+              <span className="text-xs text-slate-500">{point.photos?.length || 0} photos</span>
+            </div>
+            <div className="space-y-2">
+              {(point.observations || []).map((obs, index) => (
+                <div key={index} className={`rounded-2xl p-3 text-sm ring-1 ${obs.synced ? "bg-white text-slate-700 ring-slate-100" : "bg-blue-50 text-blue-950 ring-blue-100"}`}>
+                  <div className="mb-1 flex items-center justify-between gap-2">
+                    <div className="text-xs font-semibold text-slate-500">{obs.date} · {obs.crew}</div>
+                    {!obs.synced && <span className="rounded-full bg-blue-100 px-2 py-0.5 text-[10px] font-bold text-blue-700">UNSYNCED</span>}
+                  </div>
+                  <div className="mb-1"><StatusBadge status={obs.status} /></div>
+                  {obs.note}
+                </div>
+              ))}
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+    </motion.div>
+  );
+}
+
+function AddPointForm({ onAddPoint, userLocation }) {
+  const [draft, setDraft] = useState(blankPoint);
+
+  const set = (key, value) => setDraft((old) => ({ ...old, [key]: value }));
+
+  const useCurrentLocation = () => {
+    if (!userLocation) return;
+    setDraft((old) => ({ ...old, lat: userLocation.lat, lng: userLocation.lng }));
+  };
+
+  const save = () => {
+    if (!draft.id.trim()) return;
+    const today = new Date().toISOString().slice(0, 10);
+    const point = {
+      ...draft,
+      id: draft.id.trim(),
+      name: draft.name.trim() || `${draft.id.trim()} - Field Point`,
+      lat: Number(draft.lat) || "",
+      lng: Number(draft.lng) || "",
+      lastFound: draft.lastFound || today,
+      observations: [
+        {
+          date: draft.lastFound || today,
+          crew: draft.crew || "Field Crew",
+          status: draft.status,
+          note: draft.description || "Point added in field.",
+          synced: false,
+        },
+      ],
+      photos: [],
+    };
+    onAddPoint(point);
+    setDraft(blankPoint);
+  };
+
+  return (
+    <Card className="rounded-3xl border-0 shadow-xl">
+      <CardContent className="p-5">
+        <div className="mb-4">
+          <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">Field Entry</div>
+          <h2 className="mt-1 text-2xl font-black text-slate-950">Add Point</h2>
+        </div>
+        <div className="grid gap-3">
+          <input className="rounded-2xl border border-slate-200 px-4 py-3 text-sm outline-none focus:border-blue-400" placeholder="Point ID, e.g. CP-301" value={draft.id} onChange={(e) => set("id", e.target.value)} />
+          <input className="rounded-2xl border border-slate-200 px-4 py-3 text-sm outline-none focus:border-blue-400" placeholder="Point name / monument type" value={draft.name} onChange={(e) => set("name", e.target.value)} />
+          <div className="grid grid-cols-2 gap-3">
+            <input className="rounded-2xl border border-slate-200 px-4 py-3 text-sm outline-none focus:border-blue-400" placeholder="Latitude" value={draft.lat} onChange={(e) => set("lat", e.target.value)} />
+            <input className="rounded-2xl border border-slate-200 px-4 py-3 text-sm outline-none focus:border-blue-400" placeholder="Longitude" value={draft.lng} onChange={(e) => set("lng", e.target.value)} />
+          </div>
+          <Button onClick={useCurrentLocation} variant="secondary" className="rounded-2xl py-5" disabled={!userLocation}>
+            <LocateFixed size={16} className="mr-2" /> Use Current GPS Location
+          </Button>
+          <div className="grid grid-cols-2 gap-3">
+            <input className="rounded-2xl border border-slate-200 px-4 py-3 text-sm outline-none focus:border-blue-400" placeholder="Northing" value={draft.northing} onChange={(e) => set("northing", e.target.value)} />
+            <input className="rounded-2xl border border-slate-200 px-4 py-3 text-sm outline-none focus:border-blue-400" placeholder="Easting" value={draft.easting} onChange={(e) => set("easting", e.target.value)} />
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <select className="rounded-2xl border border-slate-200 px-4 py-3 text-sm outline-none focus:border-blue-400" value={draft.status} onChange={(e) => set("status", e.target.value)}>
+              <option value="found">Found</option>
+              <option value="suspect">Suspect</option>
+              <option value="record">Record Only</option>
+              <option value="destroyed">Destroyed</option>
+            </select>
+            <select className="rounded-2xl border border-slate-200 px-4 py-3 text-sm outline-none focus:border-blue-400" value={draft.reliability} onChange={(e) => set("reliability", e.target.value)}>
+              <option value="A">Reliability A</option>
+              <option value="B">Reliability B</option>
+              <option value="C">Reliability C</option>
+              <option value="D">Reliability D</option>
+              <option value="X">Reliability X</option>
+            </select>
+          </div>
+          <input className="rounded-2xl border border-slate-200 px-4 py-3 text-sm outline-none focus:border-blue-400" placeholder="Job" value={draft.job} onChange={(e) => set("job", e.target.value)} />
+          <input className="rounded-2xl border border-slate-200 px-4 py-3 text-sm outline-none focus:border-blue-400" placeholder="County" value={draft.county} onChange={(e) => set("county", e.target.value)} />
+          <input className="rounded-2xl border border-slate-200 px-4 py-3 text-sm outline-none focus:border-blue-400" placeholder="Crew" value={draft.crew} onChange={(e) => set("crew", e.target.value)} />
+          <textarea className="min-h-28 rounded-2xl border border-slate-200 px-4 py-3 text-sm outline-none focus:border-blue-400" placeholder="Description, ties, access notes, condition..." value={draft.description} onChange={(e) => set("description", e.target.value)} />
+          <Button onClick={save} className="rounded-2xl py-6 text-base">
+            <Plus size={18} className="mr-2" /> Add Point Locally
+          </Button>
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+export default function SurveyPointAppPrototype() {
+  const [points, setPoints] = useState(seedPoints);
+  const [query, setQuery] = useState("");
+  const [status, setStatus] = useState("all");
+  const [maxDistanceFeet, setMaxDistanceFeet] = useState(5280);
+  const [selectedPointId, setSelectedPointId] = useState(seedPoints[0].id);
+  const [tab, setTab] = useState("map");
+  const [userLocation, setUserLocation] = useState(null);
+  const [followUser, setFollowUser] = useState(true);
+  const [locationMessage, setLocationMessage] = useState("Tap You Are Here to use phone GPS.");
+
+  useEffect(() => {
+    setPoints(loadPoints());
+    const lastLocation = loadLastUserLocation();
+    if (lastLocation) setUserLocation(lastLocation);
+  }, []);
+
+  useEffect(() => {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(points));
+  }, [points]);
+
+  const locateUser = () => {
+    if (!navigator.geolocation) {
+      setLocationMessage("This browser does not support GPS location.");
+      return;
+    }
+    setLocationMessage("Getting phone GPS location...");
+    navigator.geolocation.getCurrentPosition(
+      (position) => {
+        const next = {
+          lat: position.coords.latitude,
+          lng: position.coords.longitude,
+          accuracy: position.coords.accuracy ? position.coords.accuracy * 3.28084 : null,
+          timestamp: Date.now(),
+        };
+        setUserLocation(next);
+        setFollowUser(true);
+        localStorage.setItem(USER_LOCATION_KEY, JSON.stringify(next));
+        setLocationMessage(`GPS locked. Accuracy about ${next.accuracy ? Math.round(next.accuracy).toLocaleString() + " ft" : "unknown"}.`);
+      },
+      (error) => {
+        setLocationMessage(error.message || "GPS permission denied or unavailable.");
+      },
+      {
+        enableHighAccuracy: true,
+        timeout: 15000,
+        maximumAge: 5000,
+      }
+    );
+  };
+
+  const pointsWithDistance = useMemo(() => {
+    return points.map((point) => ({
+      ...point,
+      distanceFeet: distanceFeet(userLocation, point),
+    }));
+  }, [points, userLocation]);
+
+  const filteredPoints = useMemo(() => {
+    return pointsWithDistance
+      .filter((point) => status === "all" || point.status === status)
+      .filter((point) => {
+        const haystack = `${point.id} ${point.name} ${point.job} ${point.county} ${point.description} ${point.crew}`.toLowerCase();
+        return haystack.includes(query.toLowerCase());
+      })
+      .filter((point) => {
+        if (!userLocation) return true;
+        if (point.distanceFeet === null) return false;
+        return point.distanceFeet <= maxDistanceFeet;
+      })
+      .sort((a, b) => {
+        if (a.distanceFeet === null && b.distanceFeet === null) return 0;
+        if (a.distanceFeet === null) return 1;
+        if (b.distanceFeet === null) return -1;
+        return a.distanceFeet - b.distanceFeet;
+      });
+  }, [pointsWithDistance, query, status, maxDistanceFeet, userLocation]);
+
+  const selectedPoint = pointsWithDistance.find((point) => point.id === selectedPointId) || filteredPoints[0] || pointsWithDistance[0];
+
+  const updatePoint = (updated) => {
+    const { distanceFeet: _distanceFeet, ...clean } = updated;
+    setPoints((old) => old.map((point) => (point.id === clean.id ? clean : point)));
+  };
+
+  const addPoint = (point) => {
+    setPoints((old) => [point, ...old.filter((existing) => existing.id !== point.id)]);
+    setSelectedPointId(point.id);
+    setTab("detail");
+  };
+
+  const importJson = (event) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => {
+      try {
+        const parsed = JSON.parse(String(reader.result));
+        if (Array.isArray(parsed)) setPoints(parsed);
+      } catch {
+        alert("Could not import JSON. Use the same format as exported from PointVault.");
+      }
+    };
+    reader.readAsText(file);
+  };
+
+  const resetDemo = () => {
+    setPoints(seedPoints);
+    setSelectedPointId(seedPoints[0].id);
+    setTab("map");
+  };
+
+  return (
+    <div className="min-h-screen bg-slate-100 text-slate-950">
+      <div className="mx-auto max-w-md pb-24">
+        <header className="sticky top-0 z-20 border-b border-white/70 bg-slate-100/90 px-4 py-4 backdrop-blur">
+          <div className="flex items-center justify-between">
+            <div>
+              <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-slate-500">
+                <Layers size={14} /> Field GIS
+              </div>
+              <h1 className="mt-1 text-2xl font-black tracking-tight">PointVault</h1>
+            </div>
+            <div className="flex items-center gap-1 rounded-full bg-white px-3 py-2 text-xs font-semibold text-slate-600 shadow-sm">
+              <WifiOff size={14} /> Local first
+            </div>
+          </div>
+
+          <div className="mt-4 flex gap-2">
+            <div className="relative min-w-0 flex-1">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={17} />
+              <input
+                value={query}
+                onChange={(event) => setQuery(event.target.value)}
+                placeholder="Search point, job, county..."
+                className="w-full rounded-2xl border border-slate-200 bg-white py-3 pl-10 pr-3 text-sm shadow-sm outline-none focus:border-blue-400"
+              />
+            </div>
+            <div className="relative">
+              <Filter className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
+              <select
+                value={status}
+                onChange={(event) => setStatus(event.target.value)}
+                className="h-full appearance-none rounded-2xl border border-slate-200 bg-white py-3 pl-9 pr-8 text-sm font-semibold shadow-sm outline-none focus:border-blue-400"
+              >
+                <option value="all">All</option>
+                <option value="found">Found</option>
+                <option value="suspect">Suspect</option>
+                <option value="record">Record</option>
+                <option value="destroyed">Destroyed</option>
+              </select>
+            </div>
+          </div>
+
+          <div className="mt-3 grid grid-cols-[1fr_auto] gap-2">
+            <select
+              value={maxDistanceFeet}
+              onChange={(event) => setMaxDistanceFeet(Number(event.target.value))}
+              className="rounded-2xl border border-slate-200 bg-white px-3 py-3 text-sm font-semibold shadow-sm outline-none focus:border-blue-400"
+            >
+              <option value={500}>Within 500 ft</option>
+              <option value={1000}>Within 1,000 ft</option>
+              <option value={2640}>Within 1/2 mile</option>
+              <option value={5280}>Within 1 mile</option>
+              <option value={15840}>Within 3 miles</option>
+              <option value={26400}>Within 5 miles</option>
+              <option value={52800}>Within 10 miles</option>
+              <option value={999999999}>No distance limit</option>
+            </select>
+            <Button onClick={locateUser} className="rounded-2xl px-4">
+              <LocateFixed size={17} className="mr-1" /> You Are Here
+            </Button>
+          </div>
+          <div className="mt-2 text-xs font-medium text-slate-500">{locationMessage}</div>
+        </header>
+
+        <main className="space-y-4 px-4 pt-4">
+          {tab === "map" && (
+            <>
+              <GisMap
+                points={filteredPoints}
+                selectedPoint={selectedPoint}
+                userLocation={userLocation}
+                followUser={followUser}
+                onSelectPoint={(point) => { setSelectedPointId(point.id); setTab("detail"); }}
+              />
+              <section>
+                <div className="mb-2 flex items-center justify-between px-1">
+                  <h2 className="font-bold text-slate-900">Nearest Points</h2>
+                  <span className="text-xs font-semibold text-slate-500">{filteredPoints.length} shown</span>
+                </div>
+                <div className="space-y-3">
+                  {filteredPoints.map((point) => (
+                    <PointCard
+                      key={point.id}
+                      point={point}
+                      selected={point.id === selectedPoint?.id}
+                      onClick={(clicked) => { setSelectedPointId(clicked.id); setTab("detail"); }}
+                    />
+                  ))}
+                </div>
+              </section>
+            </>
+          )}
+
+          {tab === "list" && (
+            <section>
+              <div className="mb-2 flex items-center justify-between px-1">
+                <h2 className="font-bold text-slate-900">Points by Distance</h2>
+                <span className="text-xs font-semibold text-slate-500">{filteredPoints.length} shown</span>
+              </div>
+              <div className="space-y-3">
+                {filteredPoints.map((point) => (
+                  <PointCard
+                    key={point.id}
+                    point={point}
+                    selected={point.id === selectedPoint?.id}
+                    onClick={(clicked) => { setSelectedPointId(clicked.id); setTab("detail"); }}
+                  />
+                ))}
+              </div>
+            </section>
+          )}
+
+          {tab === "detail" && selectedPoint && <PointDetail point={selectedPoint} onUpdatePoint={updatePoint} />}
+          {tab === "add" && <AddPointForm onAddPoint={addPoint} userLocation={userLocation} />}
+          {tab === "sync" && (
+            <Card className="rounded-3xl border-0 shadow-xl">
+              <CardContent className="p-5">
+                <div className="mb-4">
+                  <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">Admin / Sync</div>
+                  <h2 className="mt-1 text-2xl font-black text-slate-950">Data Tools</h2>
+                  <p className="mt-2 text-sm leading-6 text-slate-600">
+                    This version saves data on the phone with localStorage. Export creates a JSON backup. Import restores that same format.
+                  </p>
+                </div>
+                <div className="grid gap-3">
+                  <Button onClick={() => downloadJson("pointvault-points.json", points)} className="rounded-2xl py-6">
+                    <Download size={18} className="mr-2" /> Export Points JSON
+                  </Button>
+                  <label className="flex cursor-pointer items-center justify-center rounded-2xl bg-slate-900 px-4 py-4 text-sm font-semibold text-white shadow-sm">
+                    <Upload size={18} className="mr-2" /> Import Points JSON
+                    <input type="file" accept="application/json,.json" className="hidden" onChange={importJson} />
+                  </label>
+                  <Button onClick={resetDemo} variant="secondary" className="rounded-2xl py-6">
+                    Reset Demo Data
+                  </Button>
+                </div>
+                <div className="mt-5 rounded-2xl bg-slate-50 p-4 text-sm leading-6 text-slate-600">
+                  GPS requires HTTPS on deployed sites. Vercel and Netlify provide HTTPS automatically.
+                </div>
+              </CardContent>
+            </Card>
+          )}
+        </main>
+      </div>
+
+      <nav className="fixed bottom-0 left-0 right-0 z-30 border-t border-slate-200 bg-white/95 px-4 py-3 backdrop-blur">
+        <div className="mx-auto grid max-w-md grid-cols-5 gap-2 text-xs font-semibold text-slate-500">
+          <button onClick={() => setTab("map")} className={`flex flex-col items-center gap-1 ${tab === "map" ? "text-blue-600" : ""}`}><Map size={20} /> Map</button>
+          <button onClick={() => setTab("list")} className={`flex flex-col items-center gap-1 ${tab === "list" ? "text-blue-600" : ""}`}><List size={20} /> List</button>
+          <button onClick={() => setTab("add")} className={`flex flex-col items-center gap-1 ${tab === "add" ? "text-blue-600" : ""}`}><Plus size={20} /> Add</button>
+          <button onClick={() => setTab("detail")} className={`flex flex-col items-center gap-1 ${tab === "detail" ? "text-blue-600" : ""}`}><MapPin size={20} /> Point</button>
+          <button onClick={() => setTab("sync")} className={`flex flex-col items-center gap-1 ${tab === "sync" ? "text-blue-600" : ""}`}><Database size={20} /> Data</button>
+        </div>
+      </nav>
+    </div>
+  );
+}
