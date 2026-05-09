@@ -19,6 +19,8 @@ import {
   Map,
   LocateFixed,
   RefreshCw,
+  Satellite,
+  Target,
 } from "lucide-react";
 import { motion } from "framer-motion";
 import { MapContainer, Marker, Popup, TileLayer, useMap } from "react-leaflet";
@@ -173,24 +175,42 @@ function RecenterMap({ center, zoom }) {
   return null;
 }
 
-function GisMap({ points, selectedPoint, userLocation, followUser, onSelectPoint }) {
+function GisMap({ points, selectedPoint, userLocation, followUser, onSelectPoint, basemap }) {
   const fallbackCenter = [30.7, -86.1];
   const center = userLocation ? [userLocation.lat, userLocation.lng] : fallbackCenter;
+
+  const basemaps = {
+    streets: {
+      url: "https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png",
+      attribution: "&copy; OpenStreetMap contributors",
+    },
+    topo: {
+      url: "https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png",
+      attribution: "Map data: &copy; OpenStreetMap contributors, SRTM | Map style: &copy; OpenTopoMap",
+    },
+    aerial: {
+      url: "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}",
+      attribution: "Tiles &copy; Esri, Maxar, Earthstar Geographics, and the GIS User Community",
+    },
+  };
+
+  const selectedBasemap = basemaps[basemap] || basemaps.aerial;
 
   return (
     <Card className="overflow-hidden rounded-3xl border-0 shadow-lg">
       <CardContent className="relative h-[420px] p-0">
         <MapContainer center={center} zoom={userLocation ? 15 : 8} className="h-full w-full" scrollWheelZoom>
           <TileLayer
-            attribution='&copy; OpenStreetMap contributors'
-            url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+            attribution={selectedBasemap.attribution}
+            url={selectedBasemap.url}
           />
           {followUser && userLocation && <RecenterMap center={[userLocation.lat, userLocation.lng]} zoom={16} />}
           {userLocation && (
             <Marker position={[userLocation.lat, userLocation.lng]} icon={userIcon}>
               <Popup>
                 <strong>You are here</strong><br />
-                Accuracy: {userLocation.accuracy ? Math.round(userLocation.accuracy) + " ft" : "unknown"}
+                Accuracy: {userLocation.accuracy ? Math.round(userLocation.accuracy) + " ft" : "unknown"}<br />
+                GPS age: {userLocation.timestamp ? Math.round((Date.now() - userLocation.timestamp) / 1000) + " sec" : "unknown"}
               </Popup>
             </Marker>
           )}
@@ -281,7 +301,11 @@ function PointDetail({ point, onUpdatePoint }) {
   };
 
   const copyCoordinates = async () => {
-    const text = `Point: ${point.id}\nLat/Long: ${point.lat}, ${point.lng}\nN/E: ${point.northing}, ${point.easting}\nSystem: ${point.coordinateSystem}\nSource: ${point.sourceFile || point.job || "Unknown"}`;
+    const text = `Point: ${point.id}
+Lat/Long: ${point.lat}, ${point.lng}
+N/E: ${point.northing}, ${point.easting}
+System: ${point.coordinateSystem}
+Source: ${point.sourceFile || point.job || "Unknown"}`;
     await navigator.clipboard?.writeText(text);
   };
 
@@ -501,6 +525,8 @@ export default function SurveyPointAppPrototype() {
   const [userLocation, setUserLocation] = useState(null);
   const [followUser, setFollowUser] = useState(true);
   const [locationMessage, setLocationMessage] = useState("Tap You Are Here to use phone GPS.");
+  const [gpsWatchId, setGpsWatchId] = useState(null);
+  const [basemap, setBasemap] = useState("aerial");
 
   useEffect(() => {
     setPoints([]);
@@ -594,40 +620,88 @@ export default function SurveyPointAppPrototype() {
     setLoadingPoints(false);
   };
 
+  const acceptGpsPosition = async (position, shouldLoadPoints = false) => {
+    const next = {
+      lat: position.coords.latitude,
+      lng: position.coords.longitude,
+      accuracy: position.coords.accuracy ? position.coords.accuracy * 3.28084 : null,
+      timestamp: Date.now(),
+    };
+
+    setUserLocation((current) => {
+      if (!current) return next;
+      if (!next.accuracy) return next;
+      if (!current.accuracy) return next;
+      return next.accuracy <= current.accuracy + 10 ? next : current;
+    });
+
+    setFollowUser(true);
+    localStorage.setItem(USER_LOCATION_KEY, JSON.stringify(next));
+    setLocationMessage(`GPS active. Accuracy about ${next.accuracy ? Math.round(next.accuracy).toLocaleString() + " ft" : "unknown"}.`);
+
+    if (shouldLoadPoints) await loadNearbyPoints(next);
+  };
+
   const locateUser = () => {
     if (!navigator.geolocation) {
       setLocationMessage("This browser does not support GPS location.");
       return;
     }
 
-    setLocationMessage("Getting phone GPS location...");
+    setLocationMessage("Getting high-accuracy phone GPS location...");
 
     navigator.geolocation.getCurrentPosition(
       async (position) => {
-        const next = {
-          lat: position.coords.latitude,
-          lng: position.coords.longitude,
-          accuracy: position.coords.accuracy ? position.coords.accuracy * 3.28084 : null,
-          timestamp: Date.now(),
-        };
-
-        setUserLocation(next);
-        setFollowUser(true);
-        localStorage.setItem(USER_LOCATION_KEY, JSON.stringify(next));
-        setLocationMessage(`GPS locked. Accuracy about ${next.accuracy ? Math.round(next.accuracy).toLocaleString() + " ft" : "unknown"}.`);
-
-        await loadNearbyPoints(next);
+        await acceptGpsPosition(position, true);
       },
       (error) => {
         setLocationMessage(error.message || "GPS permission denied or unavailable.");
       },
       {
         enableHighAccuracy: true,
-        timeout: 15000,
-        maximumAge: 5000,
+        timeout: 20000,
+        maximumAge: 0,
       }
     );
   };
+
+  const startGpsWatch = () => {
+    if (!navigator.geolocation) {
+      setLocationMessage("This browser does not support GPS location.");
+      return;
+    }
+
+    if (gpsWatchId !== null) {
+      navigator.geolocation.clearWatch(gpsWatchId);
+      setGpsWatchId(null);
+      setLocationMessage("Live GPS stopped.");
+      return;
+    }
+
+    setLocationMessage("Starting live high-accuracy GPS...");
+
+    const watchId = navigator.geolocation.watchPosition(
+      (position) => {
+        acceptGpsPosition(position, false);
+      },
+      (error) => {
+        setLocationMessage(error.message || "Live GPS unavailable.");
+      },
+      {
+        enableHighAccuracy: true,
+        timeout: 20000,
+        maximumAge: 0,
+      }
+    );
+
+    setGpsWatchId(watchId);
+  };
+
+  useEffect(() => {
+    return () => {
+      if (gpsWatchId !== null) navigator.geolocation.clearWatch(gpsWatchId);
+    };
+  }, [gpsWatchId]);
 
   const updatePoint = (updated) => {
     const { distanceFeet: _distanceFeet, ...clean } = updated;
@@ -725,6 +799,22 @@ export default function SurveyPointAppPrototype() {
               <LocateFixed size={17} className="mr-1" /> You Are Here
             </Button>
           </div>
+
+          <div className="mt-2 grid grid-cols-2 gap-2">
+            <select
+              value={basemap}
+              onChange={(event) => setBasemap(event.target.value)}
+              className="rounded-2xl border border-slate-200 bg-white px-3 py-3 text-sm font-semibold shadow-sm outline-none focus:border-blue-400"
+            >
+              <option value="aerial">Aerial imagery</option>
+              <option value="streets">Street map</option>
+              <option value="topo">Topo map</option>
+            </select>
+            <Button onClick={startGpsWatch} variant="secondary" className="rounded-2xl px-4">
+              {gpsWatchId === null ? <><Target size={16} className="mr-1" /> Live GPS</> : "Stop GPS"}
+            </Button>
+          </div>
+
           <div className="mt-2 text-xs font-medium text-slate-500">{locationMessage}</div>
 
           <div className="mt-2 grid grid-cols-[1fr_auto] gap-2">
@@ -759,6 +849,7 @@ export default function SurveyPointAppPrototype() {
                 selectedPoint={selectedPoint}
                 userLocation={userLocation}
                 followUser={followUser}
+                basemap={basemap}
                 onSelectPoint={(point) => { setSelectedPointId(point.id); setTab("detail"); }}
               />
               <section>
