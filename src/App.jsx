@@ -26,6 +26,7 @@ import { motion } from "framer-motion";
 import { MapContainer, Marker, Popup, TileLayer, useMap } from "react-leaflet";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
+import * as EL from "esri-leaflet";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { supabase } from "@/lib/supabaseClient";
@@ -175,7 +176,29 @@ function RecenterMap({ center, zoom }) {
   return null;
 }
 
-function GisMap({ points, selectedPoint, userLocation, followUser, onSelectPoint, basemap }) {
+function ParcelOverlay() {
+  const map = useMap();
+
+  useEffect(() => {
+    const layer = EL.featureLayer({
+      url: "https://services9.arcgis.com/Gh9awoU677aKree0/ArcGIS/rest/services/Florida_Statewide_Cadastral/FeatureServer/0",
+      style: () => ({
+        color: "#00ffff",
+        weight: 1,
+        fillOpacity: 0,
+        opacity: 0.85,
+      }),
+    }).addTo(map);
+
+    return () => {
+      map.removeLayer(layer);
+    };
+  }, [map]);
+
+  return null;
+}
+
+function GisMap({ points, selectedPoint, userLocation, followUser, onSelectPoint, basemap, showParcels }) {
   const fallbackCenter = [30.7, -86.1];
   const center = userLocation ? [userLocation.lat, userLocation.lng] : fallbackCenter;
 
@@ -204,6 +227,7 @@ function GisMap({ points, selectedPoint, userLocation, followUser, onSelectPoint
             attribution={selectedBasemap.attribution}
             url={selectedBasemap.url}
           />
+          {showParcels && <ParcelOverlay />}
           {followUser && userLocation && <RecenterMap center={[userLocation.lat, userLocation.lng]} zoom={16} />}
           {userLocation && (
             <Marker position={[userLocation.lat, userLocation.lng]} icon={userIcon}>
@@ -527,6 +551,7 @@ export default function SurveyPointAppPrototype() {
   const [locationMessage, setLocationMessage] = useState("Tap You Are Here to use phone GPS.");
   const [gpsWatchId, setGpsWatchId] = useState(null);
   const [basemap, setBasemap] = useState("aerial");
+  const [showParcels, setShowParcels] = useState(false);
 
   useEffect(() => {
     setPoints([]);
@@ -815,6 +840,22 @@ export default function SurveyPointAppPrototype() {
             </Button>
           </div>
 
+          <div className="mt-2 grid gap-2">
+            <label className="flex items-center gap-2 rounded-2xl border border-slate-200 bg-white px-3 py-3 text-sm font-semibold shadow-sm">
+              <input
+                type="checkbox"
+                checked={showParcels}
+                onChange={(event) => setShowParcels(event.target.checked)}
+              />
+              Parcel Lines — Reference Only
+            </label>
+            {showParcels && (
+              <div className="rounded-2xl bg-amber-50 px-3 py-2 text-xs font-semibold leading-5 text-amber-800 ring-1 ring-amber-200">
+                Parcel lines are GIS/tax reference data only and are not survey boundary evidence.
+              </div>
+            )}
+          </div>
+
           <div className="mt-2 text-xs font-medium text-slate-500">{locationMessage}</div>
 
           <div className="mt-2 grid grid-cols-[1fr_auto] gap-2">
@@ -850,6 +891,7 @@ export default function SurveyPointAppPrototype() {
                 userLocation={userLocation}
                 followUser={followUser}
                 basemap={basemap}
+                showParcels={showParcels}
                 onSelectPoint={(point) => { setSelectedPointId(point.id); setTab("detail"); }}
               />
               <section>
