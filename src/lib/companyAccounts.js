@@ -1,0 +1,168 @@
+import { supabase } from "@/lib/supabaseClient";
+
+export async function getCurrentSession() {
+  const { data, error } = await supabase.auth.getSession();
+  if (error) throw error;
+  return data.session;
+}
+
+export function onAuthChange(callback) {
+  const { data } = supabase.auth.onAuthStateChange((_event, session) => callback(session));
+  return () => data.subscription.unsubscribe();
+}
+
+export function getInviteTokenFromUrl(search = window.location.search) {
+  return new URLSearchParams(search).get("invite") || "";
+}
+
+export function buildCompanyInviteUrl(token) {
+  if (!token) return "";
+  const url = new URL(window.location.origin);
+  url.searchParams.set("invite", token);
+  return url.toString();
+}
+
+export async function signInWithEmail(email) {
+  const inviteToken = getInviteTokenFromUrl();
+  const redirect = new URL(window.location.origin);
+  if (inviteToken) redirect.searchParams.set("invite", inviteToken);
+
+  const { error } = await supabase.auth.signInWithOtp({
+    email,
+    options: { emailRedirectTo: redirect.toString() },
+  });
+  if (error) throw error;
+}
+
+export async function signOut() {
+  const { error } = await supabase.auth.signOut();
+  if (error) throw error;
+}
+
+export async function fetchCompanyMemberships() {
+  const { data, error } = await supabase
+    .from("company_memberships")
+    .select("id, role, status, company:companies(id, name, slug, plan_status, seat_limit, owner_id)")
+    .eq("status", "active")
+    .order("created_at", { ascending: true });
+  if (error) throw error;
+  return data || [];
+}
+
+export async function createCompany({ name, slug, fullName }) {
+  const { data, error } = await supabase.rpc("create_company_with_owner", {
+    company_name: name,
+    company_slug: slug || null,
+    full_name: fullName || null,
+  });
+  if (error) throw error;
+  return data;
+}
+
+export async function inviteCompanyMember({ companyId, email, role }) {
+  const { data, error } = await supabase.rpc("invite_company_member", {
+    target_company_id: companyId,
+    invite_email: email,
+    invite_role: role || "member",
+  });
+  if (error) throw error;
+  return data;
+}
+
+export async function createCompanyInviteLink({ companyId, email, role }) {
+  const token = await inviteCompanyMember({ companyId, email, role });
+  return { token, url: buildCompanyInviteUrl(token) };
+}
+
+export async function acceptInvite(token) {
+  const { data, error } = await supabase.rpc("accept_company_invitation", {
+    invite_token: token,
+  });
+  if (error) throw error;
+  return data;
+}
+
+export async function fetchCompanyMembers(companyId) {
+  const { data, error } = await supabase
+    .from("company_memberships")
+    .select("id, role, status, created_at, profile:profiles(id, email, full_name)")
+    .eq("company_id", companyId)
+    .order("created_at", { ascending: true });
+  if (error) throw error;
+  return data || [];
+}
+
+export async function fetchCompanyInvites(companyId) {
+  const { data, error } = await supabase
+    .from("company_invites")
+    .select("id, email, role, token, accepted_at, expires_at, created_at")
+    .eq("company_id", companyId)
+    .order("created_at", { ascending: false });
+  if (error) throw error;
+  return data || [];
+}
+
+export async function fetchNearbyCompanyPoints({
+  companyId,
+  location,
+  radiusFeet = 999999999,
+  resultLimit = 5000,
+  scope = "all",
+}) {
+  if (!companyId) {
+    return {
+      data: [],
+      error: {
+        message: "No company selected.",
+      },
+    };
+  }
+
+  if (!location?.lat || !location?.lng) {
+    return {
+      data: [],
+      error: {
+        message: "No GPS/user location available.",
+      },
+    };
+  }
+
+  const { data, error } = await supabase.rpc("nearby_visible_points", {
+    target_company_id: companyId,
+    user_lat: Number(location.lat),
+    user_lng: Number(location.lng),
+    radius_feet: Number(radiusFeet || 999999999),
+    result_limit: Number(resultLimit || 5000),
+    requested_scope: scope,
+  });
+
+  if (error) {
+    return { data: [], error };
+  }
+
+  const normalized = (data || []).map((point) => ({
+    ...point,
+    id: point.id,
+    point_id: point.point_id,
+    name: point.name || point.point_id || point.marker_type || "Point",
+    description: point.description || "",
+    marker_type: point.marker_type || "",
+    latitude: Number(point.latitude),
+    longitude: Number(point.longitude),
+    lat: Number(point.latitude),
+    lng: Number(point.longitude),
+    northing: point.northing,
+    easting: point.easting,
+    elevation: point.elevation,
+    distance_feet: point.distance_feet,
+    details_locked: point.details_locked,
+    coordinates_locked: point.coordinates_locked,
+    visibility: point.visibility,
+    access_level: point.access_level,
+  }));
+
+  return {
+    data: normalized,
+    error: null,
+  };
+}

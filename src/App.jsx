@@ -1,26 +1,25 @@
 import React, { useEffect, useMemo, useState } from "react";
 import {
-  Search,
-  MapPin,
-  Plus,
-  Navigation,
-  Filter,
-  WifiOff,
-  CheckCircle2,
   AlertTriangle,
-  XCircle,
+  CheckCircle2,
   Clock,
   Database,
+  Filter,
   Layers,
-  Download,
-  Upload,
-  Save,
   List,
-  Map,
   LocateFixed,
+  Map,
+  MapPin,
+  Navigation,
+  Plus,
   RefreshCw,
   Satellite,
+  Save,
+  Search,
   Target,
+  Upload,
+  WifiOff,
+  XCircle,
 } from "lucide-react";
 import { motion } from "framer-motion";
 import { MapContainer, Marker, Popup, TileLayer, useMap } from "react-leaflet";
@@ -29,7 +28,21 @@ import "leaflet/dist/leaflet.css";
 import * as EL from "esri-leaflet";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { supabase } from "@/lib/supabaseClient";
+import {
+  CompanyAdminPanel,
+  CompanySetupPanel,
+  SignInPanel,
+} from "@/components/CompanyAccountPanel";
+import {
+  fetchNearbyCompanyPoints,
+  getCurrentSession,
+  onAuthChange,
+} from "@/lib/companyAccounts";
+import {
+  cleanupCompanyDuplicatePoints,
+  deleteCompanyPoint as deleteCompanyPointRpc,
+} from "@/lib/dataIntegration";
+import { DataImportPanel } from "@/components/DataImportPanel";
 
 const USER_LOCATION_KEY = "pointvault-last-user-location-v1";
 
@@ -62,6 +75,7 @@ const statusMeta = {
 
 const blankPoint = {
   id: "",
+  dbId: "",
   name: "",
   status: "found",
   reliability: "C",
@@ -80,6 +94,10 @@ const blankPoint = {
   photos: [],
 };
 
+function pointKey(point) {
+  return String(point?.dbId || point?.id || "");
+}
+
 function loadLastUserLocation() {
   try {
     const saved = localStorage.getItem(USER_LOCATION_KEY);
@@ -90,16 +108,6 @@ function loadLastUserLocation() {
   } catch {
     return null;
   }
-}
-
-function downloadJson(filename, data) {
-  const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
-  const url = URL.createObjectURL(blob);
-  const link = document.createElement("a");
-  link.href = url;
-  link.download = filename;
-  link.click();
-  URL.revokeObjectURL(url);
 }
 
 function toRad(degrees) {
@@ -223,36 +231,38 @@ function GisMap({ points, selectedPoint, userLocation, followUser, onSelectPoint
     <Card className="overflow-hidden rounded-3xl border-0 shadow-lg">
       <CardContent className="relative h-[420px] p-0">
         <MapContainer center={center} zoom={userLocation ? 15 : 8} className="h-full w-full" scrollWheelZoom>
-          <TileLayer
-            attribution={selectedBasemap.attribution}
-            url={selectedBasemap.url}
-          />
+          <TileLayer attribution={selectedBasemap.attribution} url={selectedBasemap.url} />
           {showParcels && <ParcelOverlay />}
           {followUser && userLocation && <RecenterMap center={[userLocation.lat, userLocation.lng]} zoom={16} />}
           {userLocation && (
             <Marker position={[userLocation.lat, userLocation.lng]} icon={userIcon}>
               <Popup>
-                <strong>You are here</strong><br />
-                Accuracy: {userLocation.accuracy ? Math.round(userLocation.accuracy) + " ft" : "unknown"}<br />
+                <strong>You are here</strong>
+                <br />
+                Accuracy: {userLocation.accuracy ? Math.round(userLocation.accuracy) + " ft" : "unknown"}
+                <br />
                 GPS age: {userLocation.timestamp ? Math.round((Date.now() - userLocation.timestamp) / 1000) + " sec" : "unknown"}
               </Popup>
             </Marker>
           )}
           {points.map((point) => {
             if (!point.lat || !point.lng) return null;
-            const selected = selectedPoint?.id === point.id;
+            const selected = pointKey(selectedPoint) === pointKey(point);
             return (
               <Marker
-                key={`${point.dbId || point.id}-${point.lat}-${point.lng}`}
+                key={`${pointKey(point)}-${point.lat}-${point.lng}`}
                 position={[Number(point.lat), Number(point.lng)]}
                 icon={pointIcon(point.status, selected)}
                 eventHandlers={{ click: () => onSelectPoint(point) }}
               >
                 <Popup>
                   <div className="min-w-48">
-                    <strong>{point.id}</strong><br />
-                    {point.description || point.name}<br />
-                    <span>{formatDistance(point.distanceFeet)} away</span><br />
+                    <strong>{point.id}</strong>
+                    <br />
+                    {point.description || point.name}
+                    <br />
+                    <span>{formatDistance(point.distanceFeet)} away</span>
+                    <br />
                     <span>{point.sourceFile || point.job || "No source file"}</span>
                   </div>
                 </Popup>
@@ -291,7 +301,7 @@ function PointCard({ point, selected, onClick }) {
   );
 }
 
-function PointDetail({ point, onUpdatePoint }) {
+function PointDetail({ point, onUpdatePoint, onDeletePoint, canDeletePoints }) {
   const [newNote, setNewNote] = useState("");
   const [newStatus, setNewStatus] = useState(point.status || "found");
 
@@ -325,11 +335,7 @@ function PointDetail({ point, onUpdatePoint }) {
   };
 
   const copyCoordinates = async () => {
-    const text = `Point: ${point.id}
-Lat/Long: ${point.lat}, ${point.lng}
-N/E: ${point.northing}, ${point.easting}
-System: ${point.coordinateSystem}
-Source: ${point.sourceFile || point.job || "Unknown"}`;
+    const text = `Point: ${point.id}\nLat/Long: ${point.lat}, ${point.lng}\nN/E: ${point.northing}, ${point.easting}\nSystem: ${point.coordinateSystem}\nSource: ${point.sourceFile || point.job || "Unknown"}`;
     await navigator.clipboard?.writeText(text);
   };
 
@@ -386,19 +392,28 @@ Source: ${point.sourceFile || point.job || "Unknown"}`;
             </div>
           </div>
 
-          <div className="mt-4 grid grid-cols-2 gap-2">
+          <div className="mt-4 grid gap-2 sm:grid-cols-3">
             <Button onClick={openNavigation} className="rounded-2xl py-5">
               <Navigation size={16} className="mr-1" /> Navigate
             </Button>
             <Button onClick={copyCoordinates} variant="secondary" className="rounded-2xl py-5">
               <Database size={16} className="mr-1" /> Copy Coords
             </Button>
+            {canDeletePoints && point.dbId && (
+              <Button
+                onClick={() => onDeletePoint(point)}
+                variant="secondary"
+                className="rounded-2xl border border-red-200 bg-red-50 py-5 text-red-800 hover:bg-red-100"
+              >
+                <XCircle size={16} className="mr-1" /> Delete
+              </Button>
+            )}
           </div>
 
           <div className="mt-5 rounded-3xl border border-slate-200 bg-white p-3">
             <div className="mb-2 font-bold text-slate-900">Add Local Observation</div>
             <p className="mb-3 text-xs leading-5 text-slate-500">
-              This saves only in the current screen for now. Database-backed observation sync can be added after the point loading is confirmed.
+              This saves only in the current screen for now. Database-backed observation sync can be added after account and point loading are confirmed.
             </p>
             <select
               value={newStatus}
@@ -419,30 +434,6 @@ Source: ${point.sourceFile || point.job || "Unknown"}`;
             <Button onClick={addObservation} className="mt-2 w-full rounded-2xl py-5">
               <Save size={16} className="mr-2" /> Save Local Observation
             </Button>
-          </div>
-
-          <div className="mt-5">
-            <div className="mb-2 flex items-center justify-between">
-              <div className="font-bold text-slate-900">Observation History</div>
-              <span className="text-xs text-slate-500">{point.photos?.length || 0} photos</span>
-            </div>
-            <div className="space-y-2">
-              {(point.observations || []).length === 0 && (
-                <div className="rounded-2xl bg-slate-50 p-3 text-sm text-slate-500 ring-1 ring-slate-100">
-                  No observations loaded yet.
-                </div>
-              )}
-              {(point.observations || []).map((obs, index) => (
-                <div key={index} className={`rounded-2xl p-3 text-sm ring-1 ${obs.synced ? "bg-white text-slate-700 ring-slate-100" : "bg-blue-50 text-blue-950 ring-blue-100"}`}>
-                  <div className="mb-1 flex items-center justify-between gap-2">
-                    <div className="text-xs font-semibold text-slate-500">{obs.date} · {obs.crew}</div>
-                    {!obs.synced && <span className="rounded-full bg-blue-100 px-2 py-0.5 text-[10px] font-bold text-blue-700">LOCAL</span>}
-                  </div>
-                  <div className="mb-1"><StatusBadge status={obs.status} /></div>
-                  {obs.note}
-                </div>
-              ))}
-            </div>
           </div>
         </CardContent>
       </Card>
@@ -493,7 +484,7 @@ function AddPointForm({ onAddPoint, userLocation }) {
           <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">Field Entry</div>
           <h2 className="mt-1 text-2xl font-black text-slate-950">Add Local Point</h2>
           <p className="mt-2 text-sm leading-6 text-slate-600">
-            This adds a temporary local point to the current screen. Use Supabase import for permanent batch data.
+            This adds a temporary local point to the current screen. Permanent company-backed point saving can be added next.
           </p>
         </div>
         <div className="grid gap-3">
@@ -536,14 +527,31 @@ function AddPointForm({ onAddPoint, userLocation }) {
   );
 }
 
+function EmptyPointState({ pointLoadMessage }) {
+  return (
+    <Card className="rounded-3xl border border-dashed border-slate-300 bg-white/80 shadow-sm">
+      <CardContent className="p-6 text-center">
+        <Target className="mx-auto text-slate-400" size={36} />
+        <h3 className="mt-3 text-lg font-black text-slate-900">No points loaded yet</h3>
+        <p className="mt-2 text-sm leading-6 text-slate-600">{pointLoadMessage}</p>
+      </CardContent>
+    </Card>
+  );
+}
+
 export default function SurveyPointAppPrototype() {
+  const [session, setSession] = useState(null);
+  const [authChecked, setAuthChecked] = useState(false);
+  const [activeCompany, setActiveCompany] = useState(null);
+  const [activeMembership, setActiveMembership] = useState(null);
+
   const [points, setPoints] = useState([]);
   const [query, setQuery] = useState("");
   const [status, setStatus] = useState("all");
   const [maxDistanceFeet, setMaxDistanceFeet] = useState(5280);
   const [resultLimit, setResultLimit] = useState(500);
   const [loadingPoints, setLoadingPoints] = useState(false);
-  const [pointLoadMessage, setPointLoadMessage] = useState("Tap You Are Here to load nearby database points.");
+  const [pointLoadMessage, setPointLoadMessage] = useState("Tap You Are Here to load nearby company points.");
   const [selectedPointId, setSelectedPointId] = useState(null);
   const [tab, setTab] = useState("map");
   const [userLocation, setUserLocation] = useState(null);
@@ -553,19 +561,54 @@ export default function SurveyPointAppPrototype() {
   const [basemap, setBasemap] = useState("aerial");
   const [showParcels, setShowParcels] = useState(false);
 
+  const canDeletePoints = ["owner", "admin"].includes(activeMembership?.role);
+
   useEffect(() => {
-    setPoints([]);
     const lastLocation = loadLastUserLocation();
     if (lastLocation) setUserLocation(lastLocation);
   }, []);
+
+  useEffect(() => {
+    let mounted = true;
+
+    getCurrentSession()
+      .then((nextSession) => {
+        if (!mounted) return;
+        setSession(nextSession);
+        setAuthChecked(true);
+      })
+      .catch(() => {
+        if (!mounted) return;
+        setAuthChecked(true);
+      });
+
+    const unsubscribe = onAuthChange((nextSession) => {
+      setSession(nextSession);
+      setAuthChecked(true);
+      if (!nextSession) {
+        setActiveCompany(null);
+        setActiveMembership(null);
+        setPoints([]);
+      }
+    });
+
+    return () => {
+      mounted = false;
+      unsubscribe?.();
+    };
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      if (gpsWatchId) navigator.geolocation.clearWatch(gpsWatchId);
+    };
+  }, [gpsWatchId]);
 
   const pointsWithDistance = useMemo(() => {
     return points.map((point) => ({
       ...point,
       distanceFeet:
-        typeof point.distanceFeet === "number"
-          ? point.distanceFeet
-          : distanceFeet(userLocation, point),
+        typeof point.distanceFeet === "number" ? point.distanceFeet : distanceFeet(userLocation, point),
     }));
   }, [points, userLocation]);
 
@@ -590,10 +633,15 @@ export default function SurveyPointAppPrototype() {
       });
   }, [pointsWithDistance, query, status, maxDistanceFeet, userLocation]);
 
-  const selectedPoint = pointsWithDistance.find((point) => point.id === selectedPointId) || filteredPoints[0] || null;
+  const selectedPoint = pointsWithDistance.find((point) => pointKey(point) === selectedPointId) || filteredPoints[0] || null;
 
   const loadNearbyPoints = async (locationOverride = userLocation) => {
     const location = locationOverride;
+
+    if (!activeCompany?.id) {
+      setPointLoadMessage("Create or join a company before loading database points.");
+      return;
+    }
 
     if (!location) {
       setPointLoadMessage("Tap You Are Here first so the app has your GPS location.");
@@ -601,25 +649,25 @@ export default function SurveyPointAppPrototype() {
     }
 
     setLoadingPoints(true);
-    setPointLoadMessage("Loading nearby points from database...");
+    setPointLoadMessage("Loading nearby company points from database...");
 
-    const { data, error } = await supabase.rpc("nearby_points", {
-      user_lat: location.lat,
-      user_lng: location.lng,
-      radius_feet: maxDistanceFeet,
-      result_limit: resultLimit,
+    const { data, error } = await fetchNearbyCompanyPoints({
+      companyId: activeCompany.id,
+      location,
+      radiusFeet: maxDistanceFeet,
+      resultLimit,
     });
 
     if (error) {
       console.error(error);
-      setPointLoadMessage(error.message || "Could not load nearby points.");
+      setPointLoadMessage(error.message || "Could not load nearby company points.");
       setLoadingPoints(false);
       return;
     }
 
     const mapped = (data || []).map((row) => ({
       id: String(row.point_id || row.id),
-      dbId: row.id,
+      dbId: row.dbId || row.db_id || row.id,
       name: row.name || String(row.point_id || row.id),
       status: row.status || "found",
       reliability: row.reliability || "C",
@@ -640,8 +688,8 @@ export default function SurveyPointAppPrototype() {
     }));
 
     setPoints(mapped);
-    setSelectedPointId(mapped[0]?.id || null);
-    setPointLoadMessage(`Loaded ${mapped.length.toLocaleString()} nearby points from database.`);
+    setSelectedPointId(pointKey(mapped[0]) || null);
+    setPointLoadMessage(`Loaded ${mapped.length.toLocaleString()} nearby company points from database.`);
     setLoadingPoints(false);
   };
 
@@ -686,7 +734,7 @@ export default function SurveyPointAppPrototype() {
         enableHighAccuracy: true,
         timeout: 20000,
         maximumAge: 0,
-      }
+      },
     );
   };
 
@@ -696,299 +744,356 @@ export default function SurveyPointAppPrototype() {
       return;
     }
 
-    if (gpsWatchId !== null) {
+    if (gpsWatchId) {
       navigator.geolocation.clearWatch(gpsWatchId);
       setGpsWatchId(null);
-      setLocationMessage("Live GPS stopped.");
+      setLocationMessage("GPS tracking stopped.");
       return;
     }
 
-    setLocationMessage("Starting live high-accuracy GPS...");
-
     const watchId = navigator.geolocation.watchPosition(
-      (position) => {
-        acceptGpsPosition(position, false);
-      },
-      (error) => {
-        setLocationMessage(error.message || "Live GPS unavailable.");
-      },
+      (position) => acceptGpsPosition(position, false),
+      (error) => setLocationMessage(error.message || "GPS tracking unavailable."),
       {
         enableHighAccuracy: true,
-        timeout: 20000,
         maximumAge: 0,
-      }
+        timeout: 20000,
+      },
     );
 
     setGpsWatchId(watchId);
+    setLocationMessage("Live GPS tracking started.");
   };
 
-  useEffect(() => {
-    return () => {
-      if (gpsWatchId !== null) navigator.geolocation.clearWatch(gpsWatchId);
-    };
-  }, [gpsWatchId]);
-
-  const updatePoint = (updated) => {
-    const { distanceFeet: _distanceFeet, ...clean } = updated;
-    setPoints((old) => old.map((point) => (point.id === clean.id ? { ...clean, distanceFeet: updated.distanceFeet } : point)));
+  const updatePoint = (updatedPoint) => {
+    setPoints((current) => current.map((point) => (pointKey(point) === pointKey(updatedPoint) ? updatedPoint : point)));
   };
 
   const addPoint = (point) => {
-    setPoints((old) => [point, ...old.filter((existing) => existing.id !== point.id)]);
-    setSelectedPointId(point.id);
+    setPoints((current) => [point, ...current]);
+    setSelectedPointId(pointKey(point));
     setTab("detail");
   };
 
-  const importJson = (event) => {
-    const file = event.target.files?.[0];
-    if (!file) return;
-    const reader = new FileReader();
-    reader.onload = () => {
-      try {
-        const parsed = JSON.parse(String(reader.result));
-        if (Array.isArray(parsed)) {
-          setPoints(parsed);
-          setPointLoadMessage(`Imported ${parsed.length.toLocaleString()} local JSON points. This does not write to Supabase.`);
-        }
-      } catch {
-        alert("Could not import JSON. Use the same format as exported from PointVault.");
-      }
-    };
-    reader.readAsText(file);
+  const selectPoint = (point) => {
+    setSelectedPointId(pointKey(point));
+    setTab("detail");
   };
 
-  const clearScreenPoints = () => {
-    setPoints([]);
+  const deleteCompanyPoint = async (point) => {
+    if (!point?.dbId) {
+      setPointLoadMessage("Only database points can be deleted.");
+      return;
+    }
+
+    if (!canDeletePoints) {
+      setPointLoadMessage("Only company owners and admins can delete points.");
+      return;
+    }
+
+    const confirmed = window.confirm(
+      `Delete point ${point.id}? This removes it from the company point database.`,
+    );
+
+    if (!confirmed) return;
+
+    const { error } = await deleteCompanyPointRpc(point.dbId);
+
+    if (error) {
+      setPointLoadMessage(error.message || "Could not delete point.");
+      return;
+    }
+
+    setPoints((current) => current.filter((existing) => pointKey(existing) !== pointKey(point)));
     setSelectedPointId(null);
-    setPointLoadMessage("Cleared screen points. Tap You Are Here or Reload to load from Supabase.");
+    setPointLoadMessage(`Deleted point ${point.id}.`);
   };
+
+  const cleanupDuplicateCompanyPoints = async () => {
+    if (!activeCompany?.id) return;
+
+    if (!canDeletePoints) {
+      setPointLoadMessage("Only company owners and admins can clean duplicate points.");
+      return;
+    }
+
+    const confirmed = window.confirm(
+      "Clean duplicate company points within 1 foot? The oldest point in each duplicate group will be kept.",
+    );
+
+    if (!confirmed) return;
+
+    const { data, error } = await cleanupCompanyDuplicatePoints(activeCompany.id, 1.0);
+
+    if (error) {
+      setPointLoadMessage(error.message || "Could not clean duplicate points.");
+      return;
+    }
+
+    const deletedCount = Number(data?.deleted_duplicate_points || 0);
+    setPointLoadMessage(`Cleaned ${deletedCount.toLocaleString()} duplicate company points.`);
+
+    if (userLocation) {
+      await loadNearbyPoints();
+    }
+  };
+
+  const signOut = async () => {
+    const { supabase } = await import("@/lib/supabaseClient");
+    await supabase.auth.signOut();
+    setSession(null);
+    setActiveCompany(null);
+    setActiveMembership(null);
+    setPoints([]);
+  };
+
+  if (!authChecked) {
+    return (
+      <div className="min-h-screen bg-slate-100 p-8 text-sm font-medium text-slate-600">
+        Loading PointVault...
+      </div>
+    );
+  }
+
+  if (!session) {
+    return <SignInPanel />;
+  }
+
+  if (!activeCompany) {
+    return (
+      <CompanySetupPanel
+        session={session}
+        onReady={(company, membership) => {
+          setActiveCompany(company);
+          setActiveMembership(membership);
+        }}
+      />
+    );
+  }
 
   return (
     <div className="min-h-screen bg-slate-100 text-slate-950">
-      <div className="mx-auto max-w-md pb-24">
-        <header className="sticky top-0 z-20 border-b border-white/70 bg-slate-100/90 px-4 py-4 backdrop-blur">
-          <div className="flex items-center justify-between">
-            <div>
-              <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-slate-500">
-                <Layers size={14} /> Field GIS
+      <header className="sticky top-0 z-20 border-b border-slate-200 bg-white/95 backdrop-blur">
+        <div className="mx-auto flex max-w-7xl flex-col gap-3 px-4 py-4 md:flex-row md:items-center md:justify-between">
+          <div>
+            <div className="flex items-center gap-2">
+              <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-slate-950 text-white shadow-lg">
+                <MapPin size={20} />
               </div>
-              <h1 className="mt-1 text-2xl font-black tracking-tight">PointVault</h1>
-            </div>
-            <div className="flex items-center gap-1 rounded-full bg-white px-3 py-2 text-xs font-semibold text-slate-600 shadow-sm">
-              <WifiOff size={14} /> Supabase
-            </div>
-          </div>
-
-          <div className="mt-4 flex gap-2">
-            <div className="relative min-w-0 flex-1">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={17} />
-              <input
-                value={query}
-                onChange={(event) => setQuery(event.target.value)}
-                placeholder="Search point, file, description..."
-                className="w-full rounded-2xl border border-slate-200 bg-white py-3 pl-10 pr-3 text-sm shadow-sm outline-none focus:border-blue-400"
-              />
-            </div>
-            <div className="relative">
-              <Filter className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
-              <select
-                value={status}
-                onChange={(event) => setStatus(event.target.value)}
-                className="h-full appearance-none rounded-2xl border border-slate-200 bg-white py-3 pl-9 pr-8 text-sm font-semibold shadow-sm outline-none focus:border-blue-400"
-              >
-                <option value="all">All</option>
-                <option value="found">Found</option>
-                <option value="suspect">Suspect</option>
-                <option value="record">Record</option>
-                <option value="destroyed">Destroyed</option>
-              </select>
-            </div>
-          </div>
-
-          <div className="mt-3 grid grid-cols-[1fr_auto] gap-2">
-            <select
-              value={maxDistanceFeet}
-              onChange={(event) => setMaxDistanceFeet(Number(event.target.value))}
-              className="rounded-2xl border border-slate-200 bg-white px-3 py-3 text-sm font-semibold shadow-sm outline-none focus:border-blue-400"
-            >
-              <option value={500}>Within 500 ft</option>
-              <option value={1000}>Within 1,000 ft</option>
-              <option value={2640}>Within 1/2 mile</option>
-              <option value={5280}>Within 1 mile</option>
-              <option value={15840}>Within 3 miles</option>
-              <option value={26400}>Within 5 miles</option>
-              <option value={52800}>Within 10 miles</option>
-              <option value={999999999}>No distance limit</option>
-            </select>
-            <Button onClick={locateUser} className="rounded-2xl px-4">
-              <LocateFixed size={17} className="mr-1" /> You Are Here
-            </Button>
-          </div>
-
-          <div className="mt-2 grid grid-cols-2 gap-2">
-            <select
-              value={basemap}
-              onChange={(event) => setBasemap(event.target.value)}
-              className="rounded-2xl border border-slate-200 bg-white px-3 py-3 text-sm font-semibold shadow-sm outline-none focus:border-blue-400"
-            >
-              <option value="aerial">Aerial imagery</option>
-              <option value="streets">Street map</option>
-              <option value="topo">Topo map</option>
-            </select>
-            <Button onClick={startGpsWatch} variant="secondary" className="rounded-2xl px-4">
-              {gpsWatchId === null ? <><Target size={16} className="mr-1" /> Live GPS</> : "Stop GPS"}
-            </Button>
-          </div>
-
-          <div className="mt-2 grid gap-2">
-            <label className="flex items-center gap-2 rounded-2xl border border-slate-200 bg-white px-3 py-3 text-sm font-semibold shadow-sm">
-              <input
-                type="checkbox"
-                checked={showParcels}
-                onChange={(event) => setShowParcels(event.target.checked)}
-              />
-              Parcel Lines — Reference Only
-            </label>
-            {showParcels && (
-              <div className="rounded-2xl bg-amber-50 px-3 py-2 text-xs font-semibold leading-5 text-amber-800 ring-1 ring-amber-200">
-                Parcel lines are GIS/tax reference data only and are not survey boundary evidence.
+              <div>
+                <h1 className="text-2xl font-black tracking-tight">PointVault</h1>
+                <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                  {activeCompany.name} · {activeMembership?.role || "member"}
+                </p>
               </div>
+            </div>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-2">
+            <Button onClick={locateUser} className="rounded-2xl px-4 py-3">
+              <LocateFixed size={16} className="mr-2" /> You Are Here
+            </Button>
+            <Button onClick={startGpsWatch} variant="secondary" className="rounded-2xl px-4 py-3">
+              <RefreshCw size={16} className="mr-2" /> {gpsWatchId ? "Stop GPS" : "Track GPS"}
+            </Button>
+            <Button onClick={() => loadNearbyPoints()} variant="secondary" className="rounded-2xl px-4 py-3" disabled={loadingPoints || !userLocation}>
+              <Database size={16} className="mr-2" /> {loadingPoints ? "Loading..." : "Load Points"}
+            </Button>
+            {canDeletePoints && (
+              <Button onClick={cleanupDuplicateCompanyPoints} variant="secondary" className="rounded-2xl px-4 py-3">
+                <XCircle size={16} className="mr-2" /> Cleanup Duplicates
+              </Button>
             )}
-          </div>
-
-          <div className="mt-2 text-xs font-medium text-slate-500">{locationMessage}</div>
-
-          <div className="mt-2 grid grid-cols-[1fr_auto] gap-2">
-            <select
-              value={resultLimit}
-              onChange={(event) => setResultLimit(Number(event.target.value))}
-              className="rounded-2xl border border-slate-200 bg-white px-3 py-3 text-sm font-semibold shadow-sm outline-none focus:border-blue-400"
-            >
-              <option value={100}>Show max 100 points</option>
-              <option value={250}>Show max 250 points</option>
-              <option value={500}>Show max 500 points</option>
-              <option value={1000}>Show max 1,000 points</option>
-              <option value={2500}>Show max 2,500 points</option>
-            </select>
-            <Button
-              onClick={() => loadNearbyPoints()}
-              disabled={loadingPoints || !userLocation}
-              variant="secondary"
-              className="rounded-2xl px-4"
-            >
-              {loadingPoints ? "Loading..." : <><RefreshCw size={16} className="mr-1" /> Reload</>}
+            <Button onClick={signOut} variant="secondary" className="rounded-2xl px-4 py-3">
+              Sign Out
             </Button>
           </div>
-          <div className="mt-2 text-xs font-medium text-slate-500">{pointLoadMessage}</div>
-        </header>
+        </div>
+      </header>
 
-        <main className="space-y-4 px-4 pt-4">
+      <main className="mx-auto grid max-w-7xl gap-4 px-4 py-4 lg:grid-cols-[1fr_380px]">
+        <section className="space-y-4">
+          <CompanyAdminPanel company={activeCompany} membership={activeMembership} />
+
+          <Card className="rounded-3xl border-0 shadow-sm">
+            <CardContent className="p-4">
+              <div className="grid gap-3 md:grid-cols-[1fr_auto_auto_auto] md:items-center">
+                <div className="relative">
+                  <Search className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
+                  <input
+                    value={query}
+                    onChange={(event) => setQuery(event.target.value)}
+                    placeholder="Search point ID, job, county, source file..."
+                    className="w-full rounded-2xl border border-slate-200 bg-white py-3 pl-11 pr-4 text-sm outline-none focus:border-blue-400"
+                  />
+                </div>
+                <select
+                  value={status}
+                  onChange={(event) => setStatus(event.target.value)}
+                  className="rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm font-semibold outline-none focus:border-blue-400"
+                >
+                  <option value="all">All Statuses</option>
+                  <option value="found">Found</option>
+                  <option value="suspect">Suspect</option>
+                  <option value="record">Record Only</option>
+                  <option value="destroyed">Destroyed</option>
+                </select>
+                <select
+                  value={maxDistanceFeet}
+                  onChange={(event) => setMaxDistanceFeet(Number(event.target.value))}
+                  className="rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm font-semibold outline-none focus:border-blue-400"
+                >
+                  <option value={1000}>Within 1,000 ft</option>
+                  <option value={5280}>Within 1 mile</option>
+                  <option value={26400}>Within 5 miles</option>
+                  <option value={999999999}>No distance limit</option>
+                </select>
+                <select
+                  value={resultLimit}
+                  onChange={(event) => setResultLimit(Number(event.target.value))}
+                  className="rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm font-semibold outline-none focus:border-blue-400"
+                >
+                  <option value={100}>100 results</option>
+                  <option value={500}>500 results</option>
+                  <option value={1000}>1,000 results</option>
+                  <option value={5000}>5,000 results</option>
+                </select>
+              </div>
+
+              <div className="mt-3 flex flex-wrap items-center justify-between gap-3 text-sm text-slate-600">
+                <div className="flex items-center gap-2">
+                  <WifiOff size={15} />
+                  <span>{locationMessage}</span>
+                </div>
+                <div className="font-semibold">
+                  Showing {filteredPoints.length.toLocaleString()} of {points.length.toLocaleString()} loaded points
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card className="rounded-3xl border-0 shadow-sm">
+            <CardContent className="flex flex-wrap gap-2 p-3">
+              <Button onClick={() => setTab("map")} variant={tab === "map" ? "default" : "secondary"} className="rounded-2xl px-4 py-3">
+                <Map size={16} className="mr-2" /> Map
+              </Button>
+              <Button onClick={() => setTab("list")} variant={tab === "list" ? "default" : "secondary"} className="rounded-2xl px-4 py-3">
+                <List size={16} className="mr-2" /> List
+              </Button>
+              <Button onClick={() => setTab("detail")} variant={tab === "detail" ? "default" : "secondary"} className="rounded-2xl px-4 py-3" disabled={!selectedPoint}>
+                <Target size={16} className="mr-2" /> Detail
+              </Button>
+              <Button onClick={() => setTab("add")} variant={tab === "add" ? "default" : "secondary"} className="rounded-2xl px-4 py-3">
+                <Plus size={16} className="mr-2" /> Add Local
+              </Button>
+              <Button onClick={() => setTab("import")} variant={tab === "import" ? "default" : "secondary"} className="rounded-2xl px-4 py-3">
+                <Upload size={16} className="mr-2" /> Data Import
+              </Button>
+            </CardContent>
+          </Card>
+
           {tab === "map" && (
-            <>
+            <div className="space-y-3">
+              <div className="flex flex-wrap gap-2">
+                <Button onClick={() => setBasemap("aerial")} variant={basemap === "aerial" ? "default" : "secondary"} className="rounded-2xl px-4 py-3">
+                  <Satellite size={16} className="mr-2" /> Aerial
+                </Button>
+                <Button onClick={() => setBasemap("streets")} variant={basemap === "streets" ? "default" : "secondary"} className="rounded-2xl px-4 py-3">
+                  <Map size={16} className="mr-2" /> Streets
+                </Button>
+                <Button onClick={() => setBasemap("topo")} variant={basemap === "topo" ? "default" : "secondary"} className="rounded-2xl px-4 py-3">
+                  <Layers size={16} className="mr-2" /> Topo
+                </Button>
+                <Button onClick={() => setShowParcels((value) => !value)} variant={showParcels ? "default" : "secondary"} className="rounded-2xl px-4 py-3">
+                  <Filter size={16} className="mr-2" /> Parcels
+                </Button>
+              </div>
               <GisMap
                 points={filteredPoints}
                 selectedPoint={selectedPoint}
                 userLocation={userLocation}
                 followUser={followUser}
+                onSelectPoint={selectPoint}
                 basemap={basemap}
                 showParcels={showParcels}
-                onSelectPoint={(point) => { setSelectedPointId(point.id); setTab("detail"); }}
               />
-              <section>
-                <div className="mb-2 flex items-center justify-between px-1">
-                  <h2 className="font-bold text-slate-900">Nearest Points</h2>
-                  <span className="text-xs font-semibold text-slate-500">{filteredPoints.length} shown</span>
-                </div>
-                {filteredPoints.length === 0 ? (
-                  <Card className="rounded-3xl border-0 shadow-sm">
-                    <CardContent className="p-5 text-sm leading-6 text-slate-600">
-                      No points loaded. Tap <strong>You Are Here</strong>, allow GPS, then use <strong>Reload</strong>. For first testing, use <strong>No distance limit</strong> and max 100 points.
-                    </CardContent>
-                  </Card>
-                ) : (
-                  <div className="space-y-3">
-                    {filteredPoints.map((point) => (
-                      <PointCard
-                        key={`${point.dbId || point.id}-${point.lat}-${point.lng}`}
-                        point={point}
-                        selected={point.id === selectedPoint?.id}
-                        onClick={(clicked) => { setSelectedPointId(clicked.id); setTab("detail"); }}
-                      />
-                    ))}
-                  </div>
-                )}
-              </section>
-            </>
+            </div>
           )}
 
           {tab === "list" && (
-            <section>
-              <div className="mb-2 flex items-center justify-between px-1">
-                <h2 className="font-bold text-slate-900">Points by Distance</h2>
-                <span className="text-xs font-semibold text-slate-500">{filteredPoints.length} shown</span>
-              </div>
-              <div className="space-y-3">
-                {filteredPoints.map((point) => (
-                  <PointCard
-                    key={`${point.dbId || point.id}-${point.lat}-${point.lng}`}
-                    point={point}
-                    selected={point.id === selectedPoint?.id}
-                    onClick={(clicked) => { setSelectedPointId(clicked.id); setTab("detail"); }}
-                  />
-                ))}
-              </div>
-            </section>
+            <div className="grid gap-3 md:grid-cols-2">
+              {filteredPoints.length === 0 && <EmptyPointState pointLoadMessage={pointLoadMessage} />}
+              {filteredPoints.map((point) => (
+                <PointCard key={`${pointKey(point)}-card`} point={point} selected={pointKey(selectedPoint) === pointKey(point)} onClick={selectPoint} />
+              ))}
+            </div>
           )}
 
-          {tab === "detail" && selectedPoint && <PointDetail point={selectedPoint} onUpdatePoint={updatePoint} />}
-          {tab === "detail" && !selectedPoint && (
-            <Card className="rounded-3xl border-0 shadow-sm">
-              <CardContent className="p-5 text-sm leading-6 text-slate-600">
-                No point selected yet. Load points from Supabase, then tap a point.
-              </CardContent>
-            </Card>
+          {tab === "detail" && (
+            <div>
+              {selectedPoint ? (
+                <PointDetail
+                  point={selectedPoint}
+                  onUpdatePoint={updatePoint}
+                  onDeletePoint={deleteCompanyPoint}
+                  canDeletePoints={canDeletePoints}
+                />
+              ) : (
+                <EmptyPointState pointLoadMessage={pointLoadMessage} />
+              )}
+            </div>
           )}
+
           {tab === "add" && <AddPointForm onAddPoint={addPoint} userLocation={userLocation} />}
-          {tab === "sync" && (
-            <Card className="rounded-3xl border-0 shadow-xl">
-              <CardContent className="p-5">
-                <div className="mb-4">
-                  <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">Admin / Data</div>
-                  <h2 className="mt-1 text-2xl font-black text-slate-950">Data Tools</h2>
-                  <p className="mt-2 text-sm leading-6 text-slate-600">
-                    The main point dataset should be imported into Supabase. This screen only exports/imports the points currently loaded on this device screen.
-                  </p>
-                </div>
-                <div className="grid gap-3">
-                  <Button onClick={() => downloadJson("pointvault-current-screen-points.json", points)} className="rounded-2xl py-6">
-                    <Download size={18} className="mr-2" /> Export Current Screen JSON
-                  </Button>
-                  <label className="flex cursor-pointer items-center justify-center rounded-2xl bg-slate-900 px-4 py-4 text-sm font-semibold text-white shadow-sm">
-                    <Upload size={18} className="mr-2" /> Import Local JSON to Screen
-                    <input type="file" accept="application/json,.json" className="hidden" onChange={importJson} />
-                  </label>
-                  <Button onClick={clearScreenPoints} variant="secondary" className="rounded-2xl py-6">
-                    Clear Screen Points
-                  </Button>
-                </div>
-                <div className="mt-5 rounded-2xl bg-slate-50 p-4 text-sm leading-6 text-slate-600">
-                  If old test points still appear, open browser DevTools Console and run <strong>localStorage.clear(); location.reload();</strong>. This version no longer loads demo points automatically.
-                </div>
-              </CardContent>
-            </Card>
-          )}
-        </main>
-      </div>
 
-      <nav className="fixed bottom-0 left-0 right-0 z-30 border-t border-slate-200 bg-white/95 px-4 py-3 backdrop-blur">
-        <div className="mx-auto grid max-w-md grid-cols-5 gap-2 text-xs font-semibold text-slate-500">
-          <button onClick={() => setTab("map")} className={`flex flex-col items-center gap-1 ${tab === "map" ? "text-blue-600" : ""}`}><Map size={20} /> Map</button>
-          <button onClick={() => setTab("list")} className={`flex flex-col items-center gap-1 ${tab === "list" ? "text-blue-600" : ""}`}><List size={20} /> List</button>
-          <button onClick={() => setTab("add")} className={`flex flex-col items-center gap-1 ${tab === "add" ? "text-blue-600" : ""}`}><Plus size={20} /> Add</button>
-          <button onClick={() => setTab("detail")} className={`flex flex-col items-center gap-1 ${tab === "detail" ? "text-blue-600" : ""}`}><MapPin size={20} /> Point</button>
-          <button onClick={() => setTab("sync")} className={`flex flex-col items-center gap-1 ${tab === "sync" ? "text-blue-600" : ""}`}><Database size={20} /> Data</button>
-        </div>
-      </nav>
+          {tab === "import" && (
+            <DataImportPanel
+              company={activeCompany}
+              membership={activeMembership}
+              onImportPromoted={() => loadNearbyPoints()}
+            />
+          )}
+        </section>
+
+        <aside className="space-y-4">
+          <Card className="rounded-3xl border-0 shadow-xl">
+            <CardContent className="p-5">
+              <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">Field Status</div>
+              <h2 className="mt-1 text-2xl font-black text-slate-950">Nearby Work</h2>
+              <p className="mt-2 text-sm leading-6 text-slate-600">{pointLoadMessage}</p>
+              <div className="mt-4 grid grid-cols-2 gap-3">
+                <div className="rounded-2xl bg-slate-50 p-4">
+                  <div className="text-xs font-semibold uppercase text-slate-400">Loaded</div>
+                  <div className="mt-1 text-2xl font-black">{points.length.toLocaleString()}</div>
+                </div>
+                <div className="rounded-2xl bg-slate-50 p-4">
+                  <div className="text-xs font-semibold uppercase text-slate-400">Visible</div>
+                  <div className="mt-1 text-2xl font-black">{filteredPoints.length.toLocaleString()}</div>
+                </div>
+              </div>
+              <Button onClick={() => loadNearbyPoints()} className="mt-4 w-full rounded-2xl py-5" disabled={loadingPoints || !userLocation}>
+                <Upload size={16} className="mr-2" /> Reload Company Points
+              </Button>
+              {canDeletePoints && (
+                <Button onClick={cleanupDuplicateCompanyPoints} variant="secondary" className="mt-2 w-full rounded-2xl py-5">
+                  <XCircle size={16} className="mr-2" /> Cleanup Duplicate Points
+                </Button>
+              )}
+            </CardContent>
+          </Card>
+
+          {selectedPoint ? (
+            <PointDetail
+              point={selectedPoint}
+              onUpdatePoint={updatePoint}
+              onDeletePoint={deleteCompanyPoint}
+              canDeletePoints={canDeletePoints}
+            />
+          ) : (
+            <EmptyPointState pointLoadMessage={pointLoadMessage} />
+          )}
+        </aside>
+      </main>
     </div>
   );
 }
