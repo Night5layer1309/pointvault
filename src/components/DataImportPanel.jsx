@@ -317,7 +317,7 @@ export function DataImportPanel({ company, membership }) {
     }
 
     setMessage(
-      `Queued ${singleFile.name} for Python processing. Keep the Python worker window running.`,
+      `Queued ${singleFile.name}. The cloud worker will pick it up shortly.`,
     );
 
     setSingleFile(null);
@@ -452,15 +452,6 @@ export function DataImportPanel({ company, membership }) {
             <StatCard label="Failed" value={failedCount} note="Needs attention" />
           </div>
 
-          <div className="mt-4 rounded-2xl border border-slate-200 bg-slate-50 p-4 text-sm leading-6 text-slate-600">
-            <div className="font-black text-slate-950">Worker checklist</div>
-            <div className="mt-1">
-              Keep this running in a second Command Prompt window:
-            </div>
-            <pre className="mt-2 overflow-auto rounded-xl bg-white p-3 text-xs font-bold text-slate-700">
-{`python pointvault_storage_worker.py`}
-            </pre>
-          </div>
         </CardContent>
       </Card>
 
@@ -686,14 +677,18 @@ export function DataImportPanel({ company, membership }) {
 
             <div className="mt-4 grid gap-2 text-sm font-semibold text-slate-600">
               <div className="rounded-2xl bg-slate-50 p-3">
-                <span className="font-black text-slate-950">Raw path:</span>{" "}
-                {activeJob.raw_storage_path || "Not uploaded"}
-              </div>
-
-              <div className="rounded-2xl bg-slate-50 p-3">
                 <span className="font-black text-slate-950">Worker message:</span>{" "}
                 {activeJob.python_worker_message || "No worker message yet."}
               </div>
+
+              <details className="rounded-2xl bg-slate-50 p-3">
+                <summary className="cursor-pointer text-xs font-bold uppercase tracking-wide text-slate-500">
+                  Storage path
+                </summary>
+                <div className="mt-2 break-all text-xs font-mono text-slate-600">
+                  {activeJob.raw_storage_path || "Not uploaded"}
+                </div>
+              </details>
 
               <div className="rounded-2xl bg-slate-50 p-3">
                 <span className="font-black text-slate-950">Created:</span>{" "}
@@ -807,8 +802,8 @@ export function DataImportPanel({ company, membership }) {
                     <div className="mt-1 text-xs font-semibold text-slate-500">
                       {formatDate(job.created_at)}
                     </div>
-                    <div className="mt-1 max-w-3xl truncate text-xs font-semibold text-slate-500">
-                      {job.raw_storage_path || "No raw storage path"}
+                    <div className="mt-1 text-xs font-semibold text-slate-400">
+                      Job {String(job.id || "").slice(0, 8) || "—"}
                     </div>
                   </div>
 
@@ -846,17 +841,6 @@ export function DataImportPanel({ company, membership }) {
         </CardContent>
       </Card>
 
-      <Card className="rounded-3xl border border-amber-200 bg-amber-50 shadow-sm">
-        <CardContent className="p-5 text-sm leading-6 text-amber-900">
-          <div className="font-black">Current limitation</div>
-          <div className="mt-1">
-            This version uploads raw files and lets the Python worker create cleaned output files.
-            The next database step is importing <strong>accepted_points.csv</strong> from storage
-            into <strong>company_points</strong>. For now, use the download buttons to inspect the
-            Python output.
-          </div>
-        </CardContent>
-      </Card>
     </div>
   );
 }
