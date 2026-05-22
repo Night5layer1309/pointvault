@@ -17,6 +17,12 @@ dist-ssr
 point test/
 .claude/
 
+# Raw pg_dump output (cleaned versions live under supabase/migrations/)
+supabase/dumps/
+
+# Supabase CLI local linkage state
+supabase/.temp/
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json
