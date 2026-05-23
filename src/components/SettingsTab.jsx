@@ -1,7 +1,8 @@
 import React, { useState } from "react";
-import { BookOpen, FileText, Moon, Settings as SettingsIcon, Sun } from "lucide-react";
+import { BookOpen, FileText, KeyRound, Moon, Settings as SettingsIcon, Sun } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { setUserPassword } from "@/lib/companyAccounts";
 
 const RADIUS_OPTIONS = [
   { value: 1000, label: "Within 1,000 ft" },
@@ -268,9 +269,92 @@ function Row({ label, hint, children }) {
   );
 }
 
-function SettingsBody({ theme, onThemeChange, defaultBasemap, onDefaultBasemapChange, defaultRadius, onDefaultRadiusChange, defaultCoordEpsg, onDefaultCoordChange }) {
+function PasswordRow({ session }) {
+  const [pw, setPw] = useState("");
+  const [pw2, setPw2] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [message, setMessage] = useState("");
+  const [kind, setKind] = useState("info");
+
+  const email = session?.user?.email || "Signed in";
+
+  const save = async () => {
+    if (pw.length < 8) {
+      setMessage("Password must be at least 8 characters.");
+      setKind("error");
+      return;
+    }
+    if (pw !== pw2) {
+      setMessage("Passwords don't match.");
+      setKind("error");
+      return;
+    }
+    setSaving(true);
+    setMessage("");
+    try {
+      await setUserPassword(pw);
+      setPw("");
+      setPw2("");
+      setMessage("Password saved. Next time you sign in, you can use email + password instead of a magic link.");
+      setKind("success");
+    } catch (error) {
+      setMessage(error?.message || "Could not save password.");
+      setKind("error");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div className="rounded-2xl border border-slate-200 bg-white p-4 dark:border-slate-700 dark:bg-slate-800">
+      <div className="flex items-center gap-2 font-bold text-slate-950 dark:text-slate-100">
+        <KeyRound size={16} /> Sign-in password
+      </div>
+      <p className="mt-1 text-xs leading-5 text-slate-500 dark:text-slate-400">
+        Set or change a password so you can sign in without the magic-link email every time.
+        Account: <span className="font-semibold">{email}</span>
+      </p>
+      <div className="mt-3 grid gap-2 md:grid-cols-[1fr_1fr_auto]">
+        <input
+          type="password"
+          value={pw}
+          onChange={(event) => setPw(event.target.value)}
+          placeholder="New password (min 8)"
+          className="rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm outline-none focus:border-blue-400 dark:border-slate-600 dark:bg-slate-900 dark:text-slate-100"
+          autoComplete="new-password"
+        />
+        <input
+          type="password"
+          value={pw2}
+          onChange={(event) => setPw2(event.target.value)}
+          placeholder="Confirm new password"
+          className="rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm outline-none focus:border-blue-400 dark:border-slate-600 dark:bg-slate-900 dark:text-slate-100"
+          autoComplete="new-password"
+        />
+        <Button onClick={save} disabled={saving || !pw || !pw2} className="rounded-2xl px-4 py-3">
+          {saving ? "Saving..." : "Save Password"}
+        </Button>
+      </div>
+      {message && (
+        <div
+          className={`mt-3 rounded-2xl px-3 py-2 text-xs font-semibold ${
+            kind === "error"
+              ? "bg-red-50 text-red-800 dark:bg-red-950 dark:text-red-200"
+              : "bg-emerald-50 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-200"
+          }`}
+        >
+          {message}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function SettingsBody({ theme, onThemeChange, defaultBasemap, onDefaultBasemapChange, defaultRadius, onDefaultRadiusChange, defaultCoordEpsg, onDefaultCoordChange, session }) {
   return (
     <div className="space-y-3">
+      <PasswordRow session={session} />
+
       <Row label="Theme" hint="Switch between light and dark mode. Saved to this browser.">
         <div className="flex gap-2">
           <Button

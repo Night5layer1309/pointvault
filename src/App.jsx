@@ -1562,6 +1562,7 @@ export default function SurveyPointAppPrototype() {
               onDefaultRadiusChange={setMaxDistanceFeet}
               defaultCoordEpsg={defaultCoordEpsg}
               onDefaultCoordChange={updateDefaultCoord}
+              session={session}
             />
           )}
         </section>

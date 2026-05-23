@@ -25,6 +25,7 @@ import {
   fetchCompanyMemberships,
   getInviteTokenFromUrl,
   signInWithEmail,
+  signInWithPassword,
   signOut,
 } from "@/lib/companyAccounts";
 
@@ -108,11 +109,12 @@ function InviteQrCard({ inviteUrl, inviteToken, email }) {
 
 export function SignInPanel() {
   const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
   const inviteToken = getInviteTokenFromUrl();
   const [message, setMessage] = useState(
     inviteToken
-      ? "Sign in with the email address that was invited. Your invite will be waiting after the magic link opens."
-      : "Sign in with a magic link to access your company points."
+      ? "Sign in with the email address that was invited. Your invite will be waiting after sign-in completes."
+      : "Sign in with your password, or leave the password blank to receive a magic-link email."
   );
   const [sending, setSending] = useState(false);
 
@@ -120,13 +122,27 @@ export function SignInPanel() {
     if (!email.trim()) return;
     setSending(true);
     try {
-      await signInWithEmail(email.trim());
-      setMessage("Magic link sent. Check your email to finish signing in.");
+      if (password) {
+        await signInWithPassword(email.trim(), password);
+        setMessage("Signed in.");
+      } else {
+        await signInWithEmail(email.trim());
+        setMessage("Magic link sent. Check your email to finish signing in.");
+      }
     } catch (error) {
-      setMessage(error.message || "Could not send magic link.");
+      const msg = error?.message || "Could not sign in.";
+      if (password && /invalid login credentials|invalid email or password/i.test(msg)) {
+        setMessage("Wrong email or password. Clear the password field to get a magic-link email instead.");
+      } else {
+        setMessage(msg);
+      }
     } finally {
       setSending(false);
     }
+  };
+
+  const onKey = (event) => {
+    if (event.key === "Enter") submit();
   };
 
   return (
@@ -147,14 +163,29 @@ export function SignInPanel() {
           )}
           <p className="mb-4 text-sm leading-6 text-slate-600">{message}</p>
           <input
+            type="email"
             className="mb-3 w-full rounded-2xl border border-slate-200 px-4 py-3 text-sm outline-none focus:border-blue-400"
             placeholder="you@company.com"
             value={email}
             onChange={(event) => setEmail(event.target.value)}
+            onKeyDown={onKey}
+            autoComplete="email"
           />
-          <Button onClick={submit} disabled={sending} className="w-full rounded-2xl py-5">
-            <Mail size={16} className="mr-2" /> {sending ? "Sending..." : "Send Magic Link"}
+          <input
+            type="password"
+            className="mb-3 w-full rounded-2xl border border-slate-200 px-4 py-3 text-sm outline-none focus:border-blue-400"
+            placeholder="Password (optional — leave blank for magic link)"
+            value={password}
+            onChange={(event) => setPassword(event.target.value)}
+            onKeyDown={onKey}
+            autoComplete="current-password"
+          />
+          <Button onClick={submit} disabled={sending || !email.trim()} className="w-full rounded-2xl py-5">
+            <Mail size={16} className="mr-2" /> {sending ? "Signing in..." : (password ? "Sign In" : "Send Magic Link")}
           </Button>
+          <p className="mt-3 text-xs leading-5 text-slate-500">
+            New here? Leave the password blank to get a one-time magic link emailed to you. Once you're in, you can set a password under Settings → Account so you don't need email next time.
+          </p>
         </CardContent>
       </Card>
     </div>
