@@ -876,6 +876,7 @@ export default function SurveyPointAppPrototype() {
         setFollowUser(false);
         setTab("map");
         await loadNearbyPoints({ lat, lng });
+        setQuery("");
         setFindMessage(`Found: ${results[0].display_name}`);
         return true;
       } catch (err) {
