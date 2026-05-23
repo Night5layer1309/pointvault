@@ -262,7 +262,22 @@ function MapInteractionCapture({ onUserInteract }) {
   return null;
 }
 
-function GisMap({ points, selectedPoint, userLocation, followUser, onUserPan, onSelectPoint, basemap, showParcels }) {
+function MapCenterTracker({ onCenterChange }) {
+  const map = useMap();
+  useEffect(() => {
+    if (!onCenterChange) return undefined;
+    const report = () => {
+      const c = map.getCenter();
+      onCenterChange({ lat: c.lat, lng: c.lng });
+    };
+    map.on("moveend", report);
+    report();
+    return () => map.off("moveend", report);
+  }, [map, onCenterChange]);
+  return null;
+}
+
+function GisMap({ points, selectedPoint, userLocation, followUser, onUserPan, onMapCenterChange, onSelectPoint, basemap, showParcels }) {
   const fallbackCenter = [30.7, -86.1];
   const center = userLocation ? [userLocation.lat, userLocation.lng] : fallbackCenter;
   const selectedBasemap = BASEMAPS[basemap] || BASEMAPS.aerial;
@@ -278,6 +293,7 @@ function GisMap({ points, selectedPoint, userLocation, followUser, onUserPan, on
             return <TileLayer key={`${basemap}-${index}`} {...layerProps} />;
           })}
           <MapInteractionCapture onUserInteract={onUserPan} />
+          <MapCenterTracker onCenterChange={onMapCenterChange} />
           {showParcels && <ParcelOverlay />}
           {followUser && userLocation && <RecenterMap center={[userLocation.lat, userLocation.lng]} zoom={16} />}
           {userLocation && (
@@ -709,6 +725,7 @@ export default function SurveyPointAppPrototype() {
   const [maxDistanceFeet, setMaxDistanceFeet] = useState(5280);
   const [resultLimit, setResultLimit] = useState(500);
   const [loadingPoints, setLoadingPoints] = useState(false);
+  const [mapCenter, setMapCenter] = useState(null);
   const [pointLoadMessage, setPointLoadMessage] = useState("Tap You Are Here to load nearby company points.");
   const [selectedPointId, setSelectedPointId] = useState(null);
   const [tab, setTab] = useState("map");
@@ -793,8 +810,8 @@ export default function SurveyPointAppPrototype() {
 
   const selectedPoint = pointsWithDistance.find((point) => pointKey(point) === selectedPointId) || filteredPoints[0] || null;
 
-  const loadNearbyPoints = async (locationOverride = userLocation) => {
-    const location = locationOverride;
+  const loadNearbyPoints = async (locationOverride = null) => {
+    const location = locationOverride || mapCenter || userLocation;
 
     if (!activeCompany?.id) {
       setPointLoadMessage("Create or join a company before loading database points.");
@@ -802,7 +819,7 @@ export default function SurveyPointAppPrototype() {
     }
 
     if (!location) {
-      setPointLoadMessage("Tap You Are Here first so the app has your GPS location.");
+      setPointLoadMessage("Tap You Are Here or pan the map to pick a location to search around.");
       return;
     }
 
@@ -1053,7 +1070,7 @@ export default function SurveyPointAppPrototype() {
             <Button onClick={startGpsWatch} variant="secondary" className="rounded-2xl px-4 py-3">
               <RefreshCw size={16} className="mr-2" /> {gpsWatchId ? "Stop GPS" : "Track GPS"}
             </Button>
-            <Button onClick={() => loadNearbyPoints()} variant="secondary" className="rounded-2xl px-4 py-3" disabled={loadingPoints || !userLocation}>
+            <Button onClick={() => loadNearbyPoints()} variant="secondary" className="rounded-2xl px-4 py-3" disabled={loadingPoints || (!userLocation && !mapCenter)}>
               <Database size={16} className="mr-2" /> {loadingPoints ? "Loading..." : "Load Points"}
             </Button>
             {canDeletePoints && (
@@ -1185,6 +1202,13 @@ export default function SurveyPointAppPrototype() {
                     <Target size={16} className="mr-2" /> Recenter
                   </Button>
                 )}
+                <Button
+                  onClick={() => loadNearbyPoints(mapCenter)}
+                  className="rounded-2xl px-4 py-3"
+                  disabled={loadingPoints || !mapCenter || !activeCompany?.id}
+                >
+                  <Search size={16} className="mr-2" /> Search This Area
+                </Button>
               </div>
               <GisMap
                 points={filteredPoints}
@@ -1192,6 +1216,7 @@ export default function SurveyPointAppPrototype() {
                 userLocation={userLocation}
                 followUser={followUser}
                 onUserPan={() => { if (followUser) setFollowUser(false); }}
+                onMapCenterChange={setMapCenter}
                 onSelectPoint={selectPoint}
                 basemap={basemap}
                 showParcels={showParcels}
@@ -1251,7 +1276,7 @@ export default function SurveyPointAppPrototype() {
                   <div className="mt-1 text-2xl font-black">{filteredPoints.length.toLocaleString()}</div>
                 </div>
               </div>
-              <Button onClick={() => loadNearbyPoints()} className="mt-4 w-full rounded-2xl py-5" disabled={loadingPoints || !userLocation}>
+              <Button onClick={() => loadNearbyPoints()} className="mt-4 w-full rounded-2xl py-5" disabled={loadingPoints || (!userLocation && !mapCenter)}>
                 <Upload size={16} className="mr-2" /> Reload Company Points
               </Button>
               {canDeletePoints && (
