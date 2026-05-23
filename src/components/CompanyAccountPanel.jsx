@@ -114,35 +114,41 @@ export function SignInPanel() {
   const [message, setMessage] = useState(
     inviteToken
       ? "Sign in with the email address that was invited. Your invite will be waiting after sign-in completes."
-      : "Sign in with your password, or leave the password blank to receive a magic-link email."
+      : "Sign in with email + password, or get a one-time magic-link email."
   );
   const [sending, setSending] = useState(false);
 
-  const submit = async () => {
+  const sendMagicLink = async () => {
     if (!email.trim()) return;
     setSending(true);
+    setMessage("Sending magic-link email...");
     try {
-      if (password) {
-        await signInWithPassword(email.trim(), password);
-        setMessage("Signed in.");
-      } else {
-        await signInWithEmail(email.trim());
-        setMessage("Magic link sent. Check your email to finish signing in.");
-      }
+      await signInWithEmail(email.trim());
+      setMessage("Magic link sent. Check your email (and spam) to finish signing in.");
+    } catch (error) {
+      setMessage(error?.message || "Could not send magic link.");
+    } finally {
+      setSending(false);
+    }
+  };
+
+  const signInWithPwd = async () => {
+    if (!email.trim() || !password) return;
+    setSending(true);
+    setMessage("Signing in...");
+    try {
+      await signInWithPassword(email.trim(), password);
+      setMessage("Signed in.");
     } catch (error) {
       const msg = error?.message || "Could not sign in.";
-      if (password && /invalid login credentials|invalid email or password/i.test(msg)) {
-        setMessage("Wrong email or password. Clear the password field to get a magic-link email instead.");
+      if (/invalid login credentials|invalid email or password/i.test(msg)) {
+        setMessage("Wrong email or password. If you haven't set a password yet, use 'Send Magic Link' instead.");
       } else {
         setMessage(msg);
       }
     } finally {
       setSending(false);
     }
-  };
-
-  const onKey = (event) => {
-    if (event.key === "Enter") submit();
   };
 
   return (
@@ -168,23 +174,36 @@ export function SignInPanel() {
             placeholder="you@company.com"
             value={email}
             onChange={(event) => setEmail(event.target.value)}
-            onKeyDown={onKey}
             autoComplete="email"
           />
           <input
             type="password"
             className="mb-3 w-full rounded-2xl border border-slate-200 px-4 py-3 text-sm outline-none focus:border-blue-400"
-            placeholder="Password (optional — leave blank for magic link)"
+            placeholder="Password (only if you've set one)"
             value={password}
             onChange={(event) => setPassword(event.target.value)}
-            onKeyDown={onKey}
+            onKeyDown={(event) => { if (event.key === "Enter" && password) signInWithPwd(); }}
             autoComplete="current-password"
           />
-          <Button onClick={submit} disabled={sending || !email.trim()} className="w-full rounded-2xl py-5">
-            <Mail size={16} className="mr-2" /> {sending ? "Signing in..." : (password ? "Sign In" : "Send Magic Link")}
-          </Button>
+          <div className="grid gap-2">
+            <Button
+              onClick={signInWithPwd}
+              disabled={sending || !email.trim() || !password}
+              className="w-full rounded-2xl py-5"
+            >
+              Sign In with Password
+            </Button>
+            <Button
+              onClick={sendMagicLink}
+              disabled={sending || !email.trim()}
+              variant="secondary"
+              className="w-full rounded-2xl py-5"
+            >
+              <Mail size={16} className="mr-2" /> Send Magic Link
+            </Button>
+          </div>
           <p className="mt-3 text-xs leading-5 text-slate-500">
-            New here? Leave the password blank to get a one-time magic link emailed to you. Once you're in, you can set a password under Settings → Account so you don't need email next time.
+            First time here? Click <strong>Send Magic Link</strong> — you'll get a one-time sign-in email. Once you're in, set a password under Settings so you don't need email next time.
           </p>
         </CardContent>
       </Card>
