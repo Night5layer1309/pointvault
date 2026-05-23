@@ -18,14 +18,217 @@ const BASEMAP_OPTIONS = [
   { value: "usgs", label: "USGS Hi-Res" },
 ];
 
-const COORD_SYSTEM_OPTIONS = [
-  { epsg: "2238", name: "NAD83 / Florida North (ftUS)" },
-  { epsg: "2237", name: "NAD83 / Florida East (ftUS)" },
-  { epsg: "2239", name: "NAD83 / Florida West (ftUS)" },
-  { epsg: "2240", name: "NAD83 / Georgia East (ftUS)" },
-  { epsg: "2241", name: "NAD83 / Georgia West (ftUS)" },
-  { epsg: "2249", name: "NAD83 / Massachusetts Mainland (ftUS)" },
+// NAD83 / State Plane (US Survey Feet) zones for all CONUS states, grouped by state.
+// EPSG codes from the NAD83 (1986) State Plane family. If a specific code is off
+// for a customer's workflow, edit just that row — the rest stay intact.
+const COORD_SYSTEM_GROUPS = [
+  { state: "Alabama", zones: [
+    { epsg: "2759", name: "Alabama East (ftUS)" },
+    { epsg: "2760", name: "Alabama West (ftUS)" },
+  ]},
+  { state: "Arizona", zones: [
+    { epsg: "2762", name: "Arizona East (ftIntl)" },
+    { epsg: "2763", name: "Arizona Central (ftIntl)" },
+    { epsg: "2764", name: "Arizona West (ftIntl)" },
+  ]},
+  { state: "Arkansas", zones: [
+    { epsg: "3433", name: "Arkansas North (ftUS)" },
+    { epsg: "3434", name: "Arkansas South (ftUS)" },
+  ]},
+  { state: "California", zones: [
+    { epsg: "2225", name: "California zone 1 (ftUS)" },
+    { epsg: "2226", name: "California zone 2 (ftUS)" },
+    { epsg: "2227", name: "California zone 3 (ftUS)" },
+    { epsg: "2228", name: "California zone 4 (ftUS)" },
+    { epsg: "2229", name: "California zone 5 (ftUS)" },
+    { epsg: "2230", name: "California zone 6 (ftUS)" },
+  ]},
+  { state: "Colorado", zones: [
+    { epsg: "2231", name: "Colorado North (ftUS)" },
+    { epsg: "2232", name: "Colorado Central (ftUS)" },
+    { epsg: "2233", name: "Colorado South (ftUS)" },
+  ]},
+  { state: "Connecticut", zones: [
+    { epsg: "2234", name: "Connecticut (ftUS)" },
+  ]},
+  { state: "Delaware", zones: [
+    { epsg: "2235", name: "Delaware (ftUS)" },
+  ]},
+  { state: "Florida", zones: [
+    { epsg: "2238", name: "Florida North (ftUS)" },
+    { epsg: "2237", name: "Florida East (ftUS)" },
+    { epsg: "2239", name: "Florida West (ftUS)" },
+  ]},
+  { state: "Georgia", zones: [
+    { epsg: "2240", name: "Georgia East (ftUS)" },
+    { epsg: "2241", name: "Georgia West (ftUS)" },
+  ]},
+  { state: "Idaho", zones: [
+    { epsg: "2242", name: "Idaho East (ftUS)" },
+    { epsg: "2243", name: "Idaho Central (ftUS)" },
+    { epsg: "2244", name: "Idaho West (ftUS)" },
+  ]},
+  { state: "Illinois", zones: [
+    { epsg: "3435", name: "Illinois East (ftUS)" },
+    { epsg: "3436", name: "Illinois West (ftUS)" },
+  ]},
+  { state: "Indiana", zones: [
+    { epsg: "2245", name: "Indiana East (ftUS)" },
+    { epsg: "2246", name: "Indiana West (ftUS)" },
+  ]},
+  { state: "Iowa", zones: [
+    { epsg: "3417", name: "Iowa North (ftUS)" },
+    { epsg: "3418", name: "Iowa South (ftUS)" },
+  ]},
+  { state: "Kansas", zones: [
+    { epsg: "3419", name: "Kansas North (ftUS)" },
+    { epsg: "3420", name: "Kansas South (ftUS)" },
+  ]},
+  { state: "Kentucky", zones: [
+    { epsg: "2246", name: "Kentucky North (ftUS)" },
+    { epsg: "2247", name: "Kentucky South (ftUS)" },
+    { epsg: "3088", name: "Kentucky Single Zone (ftUS)" },
+  ]},
+  { state: "Louisiana", zones: [
+    { epsg: "3451", name: "Louisiana North (ftUS)" },
+    { epsg: "3452", name: "Louisiana South (ftUS)" },
+    { epsg: "3453", name: "Louisiana Offshore (ftUS)" },
+  ]},
+  { state: "Maine", zones: [
+    { epsg: "26847", name: "Maine East (ftUS)" },
+    { epsg: "26848", name: "Maine West (ftUS)" },
+  ]},
+  { state: "Maryland", zones: [
+    { epsg: "2248", name: "Maryland (ftUS)" },
+  ]},
+  { state: "Massachusetts", zones: [
+    { epsg: "2249", name: "Massachusetts Mainland (ftUS)" },
+    { epsg: "2250", name: "Massachusetts Island (ftUS)" },
+  ]},
+  { state: "Michigan", zones: [
+    { epsg: "2251", name: "Michigan North (ftIntl)" },
+    { epsg: "2252", name: "Michigan Central (ftIntl)" },
+    { epsg: "2253", name: "Michigan South (ftIntl)" },
+  ]},
+  { state: "Minnesota", zones: [
+    { epsg: "26849", name: "Minnesota North (ftUS)" },
+    { epsg: "26850", name: "Minnesota Central (ftUS)" },
+    { epsg: "26851", name: "Minnesota South (ftUS)" },
+  ]},
+  { state: "Mississippi", zones: [
+    { epsg: "2254", name: "Mississippi East (ftUS)" },
+    { epsg: "2255", name: "Mississippi West (ftUS)" },
+  ]},
+  { state: "Missouri", zones: [
+    { epsg: "26896", name: "Missouri East (ftUS)" },
+    { epsg: "26897", name: "Missouri Central (ftUS)" },
+    { epsg: "26898", name: "Missouri West (ftUS)" },
+  ]},
+  { state: "Montana", zones: [
+    { epsg: "2256", name: "Montana (ftIntl)" },
+  ]},
+  { state: "Nebraska", zones: [
+    { epsg: "26852", name: "Nebraska (ftUS)" },
+  ]},
+  { state: "Nevada", zones: [
+    { epsg: "3421", name: "Nevada East (ftUS)" },
+    { epsg: "3422", name: "Nevada Central (ftUS)" },
+    { epsg: "3423", name: "Nevada West (ftUS)" },
+  ]},
+  { state: "New Hampshire", zones: [
+    { epsg: "3437", name: "New Hampshire (ftUS)" },
+  ]},
+  { state: "New Jersey", zones: [
+    { epsg: "3424", name: "New Jersey (ftUS)" },
+  ]},
+  { state: "New Mexico", zones: [
+    { epsg: "2257", name: "New Mexico East (ftUS)" },
+    { epsg: "2258", name: "New Mexico Central (ftUS)" },
+    { epsg: "2259", name: "New Mexico West (ftUS)" },
+  ]},
+  { state: "New York", zones: [
+    { epsg: "2260", name: "New York East (ftUS)" },
+    { epsg: "2261", name: "New York Central (ftUS)" },
+    { epsg: "2262", name: "New York West (ftUS)" },
+    { epsg: "2263", name: "New York Long Island (ftUS)" },
+  ]},
+  { state: "North Carolina", zones: [
+    { epsg: "2264", name: "North Carolina (ftUS)" },
+  ]},
+  { state: "North Dakota", zones: [
+    { epsg: "2265", name: "North Dakota North (ftIntl)" },
+    { epsg: "2266", name: "North Dakota South (ftIntl)" },
+  ]},
+  { state: "Ohio", zones: [
+    { epsg: "3753", name: "Ohio North (ftUS)" },
+    { epsg: "3754", name: "Ohio South (ftUS)" },
+  ]},
+  { state: "Oklahoma", zones: [
+    { epsg: "2267", name: "Oklahoma North (ftUS)" },
+    { epsg: "2268", name: "Oklahoma South (ftUS)" },
+  ]},
+  { state: "Oregon", zones: [
+    { epsg: "2269", name: "Oregon North (ftIntl)" },
+    { epsg: "2270", name: "Oregon South (ftIntl)" },
+  ]},
+  { state: "Pennsylvania", zones: [
+    { epsg: "2271", name: "Pennsylvania North (ftUS)" },
+    { epsg: "2272", name: "Pennsylvania South (ftUS)" },
+  ]},
+  { state: "Rhode Island", zones: [
+    { epsg: "3438", name: "Rhode Island (ftUS)" },
+  ]},
+  { state: "South Carolina", zones: [
+    { epsg: "2273", name: "South Carolina (ftIntl)" },
+  ]},
+  { state: "South Dakota", zones: [
+    { epsg: "4457", name: "South Dakota North (ftUS)" },
+    { epsg: "3455", name: "South Dakota South (ftUS)" },
+  ]},
+  { state: "Tennessee", zones: [
+    { epsg: "2274", name: "Tennessee (ftUS)" },
+  ]},
+  { state: "Texas", zones: [
+    { epsg: "2275", name: "Texas North (ftUS)" },
+    { epsg: "2276", name: "Texas North Central (ftUS)" },
+    { epsg: "2277", name: "Texas Central (ftUS)" },
+    { epsg: "2278", name: "Texas South Central (ftUS)" },
+    { epsg: "2279", name: "Texas South (ftUS)" },
+  ]},
+  { state: "Utah", zones: [
+    { epsg: "2921", name: "Utah North (ftIntl)" },
+    { epsg: "2922", name: "Utah Central (ftIntl)" },
+    { epsg: "2923", name: "Utah South (ftIntl)" },
+  ]},
+  { state: "Vermont", zones: [
+    { epsg: "5646", name: "Vermont (ftUS)" },
+  ]},
+  { state: "Virginia", zones: [
+    { epsg: "2283", name: "Virginia North (ftUS)" },
+    { epsg: "2284", name: "Virginia South (ftUS)" },
+  ]},
+  { state: "Washington", zones: [
+    { epsg: "2285", name: "Washington North (ftUS)" },
+    { epsg: "2286", name: "Washington South (ftUS)" },
+  ]},
+  { state: "West Virginia", zones: [
+    { epsg: "26869", name: "West Virginia North (ftUS)" },
+    { epsg: "26870", name: "West Virginia South (ftUS)" },
+  ]},
+  { state: "Wisconsin", zones: [
+    { epsg: "2287", name: "Wisconsin North (ftUS)" },
+    { epsg: "2288", name: "Wisconsin Central (ftUS)" },
+    { epsg: "2289", name: "Wisconsin South (ftUS)" },
+  ]},
+  { state: "Wyoming", zones: [
+    { epsg: "3736", name: "Wyoming East (ftUS)" },
+    { epsg: "3737", name: "Wyoming East Central (ftUS)" },
+    { epsg: "3738", name: "Wyoming West Central (ftUS)" },
+    { epsg: "3739", name: "Wyoming West (ftUS)" },
+  ]},
 ];
+
+const COORD_SYSTEM_FLAT = COORD_SYSTEM_GROUPS.flatMap((group) => group.zones);
 
 function SectionTabs({ section, onSection }) {
   const tabs = [
@@ -111,17 +314,21 @@ function SettingsBody({ theme, onThemeChange, defaultBasemap, onDefaultBasemapCh
         </select>
       </Row>
 
-      <Row label="Default coordinate system" hint="Pre-fills the EPSG and coordinate system on new imports.">
+      <Row label="Default coordinate system" hint="Pre-fills the EPSG and coordinate system on new imports. All CONUS state plane zones (NAD83) listed; pick the one your state uses.">
         <select
           value={defaultCoordEpsg}
           onChange={(event) => {
-            const picked = COORD_SYSTEM_OPTIONS.find((item) => item.epsg === event.target.value);
+            const picked = COORD_SYSTEM_FLAT.find((item) => item.epsg === event.target.value);
             if (picked) onDefaultCoordChange(picked.epsg, picked.name);
           }}
-          className="rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm font-semibold outline-none focus:border-blue-400 dark:border-slate-600 dark:bg-slate-900 dark:text-slate-100"
+          className="max-w-xs rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm font-semibold outline-none focus:border-blue-400 dark:border-slate-600 dark:bg-slate-900 dark:text-slate-100"
         >
-          {COORD_SYSTEM_OPTIONS.map((option) => (
-            <option key={option.epsg} value={option.epsg}>EPSG:{option.epsg} — {option.name}</option>
+          {COORD_SYSTEM_GROUPS.map((group) => (
+            <optgroup key={group.state} label={group.state}>
+              {group.zones.map((zone) => (
+                <option key={zone.epsg} value={zone.epsg}>EPSG:{zone.epsg} — {zone.name}</option>
+              ))}
+            </optgroup>
           ))}
         </select>
       </Row>
