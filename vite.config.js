@@ -10,19 +10,18 @@ export default defineConfig({
     tailwindcss(),
     VitePWA({
       registerType: 'autoUpdate',
-      includeAssets: ['favicon.svg', 'icons.svg', 'apple-touch-icon.png'],
+      includeAssets: ['favicon-32.png', 'apple-touch-icon.png'],
       manifest: {
         name: 'PointVault',
         short_name: 'PointVault',
         description: 'Field surveying companion for shared survey point data.',
-        theme_color: '#0f172a',
-        background_color: '#f1f5f9',
+        theme_color: '#1e2952',
+        background_color: '#1e2952',
         display: 'standalone',
         orientation: 'any',
         start_url: '/',
         scope: '/',
         icons: [
-          { src: 'favicon.svg', sizes: 'any', type: 'image/svg+xml' },
           { src: 'icon-192.png', sizes: '192x192', type: 'image/png', purpose: 'any' },
           { src: 'icon-512.png', sizes: '512x512', type: 'image/png', purpose: 'any' },
           { src: 'icon-192.png', sizes: '192x192', type: 'image/png', purpose: 'maskable' },
