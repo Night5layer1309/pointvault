@@ -296,7 +296,7 @@ const BASEMAPS = {
   ],
 };
 
-function ClusteredPoints({ points, selectedPoint, onSelectPoint }) {
+function ClusteredPoints({ points, selectedPoint, onSelectPoint, onClusterZoom }) {
   const map = useMap();
   useEffect(() => {
     const cluster = L.markerClusterGroup({
@@ -305,6 +305,10 @@ function ClusteredPoints({ points, selectedPoint, onSelectPoint }) {
       maxClusterRadius: 60,
       chunkedLoading: true,
     });
+
+    if (onClusterZoom) {
+      cluster.on("clusterclick", () => onClusterZoom());
+    }
 
     const selectedKey = pointKey(selectedPoint);
     const escapeHtml = (text) => String(text ?? "").replace(/[&<>"']/g, (ch) => ({
@@ -453,7 +457,12 @@ function GisMap({ points, selectedPoint, userLocation, followUser, onUserPan, on
               </Popup>
             </Marker>
           )}
-          <ClusteredPoints points={points} selectedPoint={selectedPoint} onSelectPoint={onSelectPoint} />
+          <ClusteredPoints
+            points={points}
+            selectedPoint={selectedPoint}
+            onSelectPoint={onSelectPoint}
+            onClusterZoom={onUserPan}
+          />
         </MapContainer>
       </CardContent>
     </Card>
