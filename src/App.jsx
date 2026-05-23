@@ -41,9 +41,11 @@ import {
 import { SettingsTab } from "@/components/SettingsTab";
 import {
   addCommunityPointNote,
+  addPointObservation,
   fetchNearbyCompanyPoints,
   getCurrentSession,
   listCommunityPointNotes,
+  listPointObservations,
   onAuthChange,
 } from "@/lib/companyAccounts";
 import {
@@ -609,29 +611,67 @@ function CommunityFieldNotesSection({ point, company }) {
 function PointDetail({ point, company, onUpdatePoint, onDeletePoint, canDeletePoints }) {
   const [newNote, setNewNote] = useState("");
   const [newStatus, setNewStatus] = useState(point.status || "found");
+  const [observations, setObservations] = useState([]);
+  const [observationsLoading, setObservationsLoading] = useState(false);
+  const [observationError, setObservationError] = useState("");
+  const [savingObservation, setSavingObservation] = useState(false);
+
+  const canPersistObservations = !!point.dbId;
+
+  const loadObservations = async () => {
+    if (!canPersistObservations) {
+      setObservations([]);
+      return;
+    }
+    setObservationsLoading(true);
+    setObservationError("");
+    try {
+      const rows = await listPointObservations(point.dbId);
+      setObservations(rows);
+    } catch (error) {
+      setObservationError(error?.message || "Could not load observations.");
+    } finally {
+      setObservationsLoading(false);
+    }
+  };
 
   useEffect(() => {
     setNewStatus(point.status || "found");
     setNewNote("");
-  }, [point.id, point.status]);
+    loadObservations();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [point.dbId]);
 
-  const addObservation = () => {
-    if (!newNote.trim()) return;
-    const today = new Date().toISOString().slice(0, 10);
-    const observation = {
-      date: today,
-      crew: point.crew || "Field Crew",
-      status: newStatus,
-      note: newNote.trim(),
-      synced: false,
-    };
-    onUpdatePoint({
-      ...point,
-      status: newStatus,
-      lastFound: newStatus === "found" ? today : point.lastFound,
-      observations: [observation, ...(point.observations || [])],
-    });
-    setNewNote("");
+  useEffect(() => {
+    setNewStatus(point.status || "found");
+  }, [point.status]);
+
+  const addObservation = async () => {
+    if (!canPersistObservations) {
+      setObservationError("This point isn't saved to the database yet — locally added points can't accept observations until they're imported.");
+      return;
+    }
+    setSavingObservation(true);
+    setObservationError("");
+    try {
+      await addPointObservation({
+        companyPointId: point.dbId,
+        status: newStatus,
+        body: newNote.trim(),
+      });
+      const today = new Date().toISOString().slice(0, 10);
+      onUpdatePoint({
+        ...point,
+        status: newStatus,
+        lastFound: newStatus === "found" ? today : point.lastFound,
+      });
+      setNewNote("");
+      await loadObservations();
+    } catch (error) {
+      setObservationError(error?.message || "Could not save observation.");
+    } finally {
+      setSavingObservation(false);
+    }
   };
 
   const openNavigation = () => {
@@ -716,10 +756,35 @@ function PointDetail({ point, company, onUpdatePoint, onDeletePoint, canDeletePo
           </div>
 
           <div className="mt-5 rounded-3xl border border-slate-200 bg-white p-3">
-            <div className="mb-2 font-bold text-slate-900">Add Local Observation</div>
+            <div className="mb-2 flex items-center justify-between">
+              <div className="font-bold text-slate-900">Observations</div>
+              {observationsLoading && <span className="text-xs font-semibold text-slate-500">Loading...</span>}
+            </div>
             <p className="mb-3 text-xs leading-5 text-slate-500">
-              This saves only in the current screen for now. Database-backed observation sync can be added after account and point loading are confirmed.
+              Saved to your company's database, syncs across your phone and PC. Each observation also updates this point's status.
             </p>
+
+            {observations.length > 0 && (
+              <div className="mb-3 space-y-2">
+                {observations.slice(0, 8).map((obs) => (
+                  <div key={obs.id} className="rounded-2xl bg-slate-50 px-3 py-2 text-xs text-slate-700 ring-1 ring-slate-100">
+                    <div className="flex items-center justify-between gap-2">
+                      <StatusBadge status={obs.status} />
+                      <span className="font-semibold text-slate-500">
+                        {obs.user_email || "Unknown"} · {obs.created_at ? new Date(obs.created_at).toLocaleString() : ""}
+                      </span>
+                    </div>
+                    {obs.body && <div className="mt-2 whitespace-pre-wrap leading-5">{obs.body}</div>}
+                  </div>
+                ))}
+                {observations.length > 8 && (
+                  <div className="rounded-2xl bg-slate-100 px-3 py-2 text-xs font-semibold text-slate-600">
+                    + {observations.length - 8} older observation{observations.length - 8 === 1 ? "" : "s"}
+                  </div>
+                )}
+              </div>
+            )}
+
             <select
               value={newStatus}
               onChange={(event) => setNewStatus(event.target.value)}
@@ -733,12 +798,28 @@ function PointDetail({ point, company, onUpdatePoint, onDeletePoint, canDeletePo
             <textarea
               value={newNote}
               onChange={(event) => setNewNote(event.target.value)}
-              placeholder="Add field note, condition, witness ties, access info..."
+              placeholder="Field note, condition, witness ties, access info... (optional)"
               className="min-h-24 w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm outline-none focus:border-blue-400"
+              maxLength={4000}
             />
-            <Button onClick={addObservation} className="mt-2 w-full rounded-2xl py-5">
-              <Save size={16} className="mr-2" /> Save Local Observation
+            <Button
+              onClick={addObservation}
+              disabled={savingObservation || !canPersistObservations}
+              className="mt-2 w-full rounded-2xl py-5"
+            >
+              <Save size={16} className="mr-2" />
+              {savingObservation ? "Saving..." : "Save Observation"}
             </Button>
+            {!canPersistObservations && (
+              <div className="mt-2 rounded-2xl bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-900">
+                This point isn't in the database yet — observations save only for points loaded from a company import.
+              </div>
+            )}
+            {observationError && (
+              <div className="mt-2 rounded-2xl bg-red-50 px-3 py-2 text-xs font-semibold text-red-800">
+                {observationError}
+              </div>
+            )}
           </div>
 
           <CommunityFieldNotesSection point={point} company={company} />
