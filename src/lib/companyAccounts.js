@@ -147,6 +147,43 @@ export async function fetchCompanyInvites(companyId) {
   return data || [];
 }
 
+export async function fetchCompanyBilling(companyId) {
+  const { data, error } = await supabase.rpc("company_billing_snapshot", {
+    target_company_id: companyId,
+  });
+  if (error) throw error;
+  return Array.isArray(data) ? (data[0] || null) : data;
+}
+
+export async function startCheckoutForCompany(companyId) {
+  const priceId = import.meta.env.VITE_STRIPE_PRICE_ID;
+  if (!priceId) {
+    throw new Error("VITE_STRIPE_PRICE_ID is not configured.");
+  }
+  const { data, error } = await supabase.functions.invoke("create-checkout-session", {
+    body: {
+      companyId,
+      priceId,
+      returnOrigin: window.location.origin,
+    },
+  });
+  if (error) throw error;
+  if (!data?.url) throw new Error("Stripe Checkout did not return a URL.");
+  window.location.href = data.url;
+}
+
+export async function openBillingPortal(companyId) {
+  const { data, error } = await supabase.functions.invoke("create-portal-session", {
+    body: {
+      companyId,
+      returnOrigin: window.location.origin,
+    },
+  });
+  if (error) throw error;
+  if (!data?.url) throw new Error("Stripe portal did not return a URL.");
+  window.location.href = data.url;
+}
+
 export async function listPointObservations(companyPointId) {
   if (!companyPointId) return [];
   const { data, error } = await supabase.rpc("list_point_observations", {

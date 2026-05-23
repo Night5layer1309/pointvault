@@ -2,7 +2,10 @@ import React, { useEffect, useState } from "react";
 import QRCode from "qrcode";
 import {
   Building2,
+  CheckCircle2,
   Copy,
+  CreditCard,
+  ExternalLink,
   Link as LinkIcon,
   Mail,
   Plus,
@@ -20,13 +23,16 @@ import {
   createCompany,
   createCompanyInviteLink,
   createOpenCompanyInviteLink,
+  fetchCompanyBilling,
   fetchCompanyInvites,
   fetchCompanyMembers,
   fetchCompanyMemberships,
   getInviteTokenFromUrl,
+  openBillingPortal,
   signInWithEmail,
   signInWithPassword,
   signOut,
+  startCheckoutForCompany,
 } from "@/lib/companyAccounts";
 
 function slugify(value) {
@@ -308,6 +314,142 @@ export function CompanySwitcher({ memberships, activeCompanyId, onChange }) {
   );
 }
 
+function BillingBadge({ status }) {
+  const label = status ? status.replace(/_/g, " ") : "free";
+  const tone = status === "active" || status === "trialing"
+    ? "bg-emerald-100 text-emerald-800"
+    : status === "past_due" || status === "incomplete" || status === "unpaid"
+      ? "bg-amber-100 text-amber-900"
+      : status === "canceled" || status === "incomplete_expired"
+        ? "bg-red-100 text-red-800"
+        : "bg-slate-100 text-slate-700";
+  return (
+    <span className={`rounded-full px-2 py-1 text-xs font-black uppercase ${tone}`}>{label}</span>
+  );
+}
+
+function BillingPanel({ company, canAdmin }) {
+  const [billing, setBilling] = useState(null);
+  const [loading, setLoading] = useState(false);
+  const [working, setWorking] = useState(false);
+  const [error, setError] = useState("");
+
+  const load = async () => {
+    if (!company?.id || !canAdmin) return;
+    setLoading(true);
+    setError("");
+    try {
+      const snapshot = await fetchCompanyBilling(company.id);
+      setBilling(snapshot);
+    } catch (err) {
+      setError(err?.message || "Could not load billing.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    load();
+    const params = new URLSearchParams(window.location.search);
+    if (params.get("billing")) {
+      const cleanUrl = new URL(window.location.href);
+      cleanUrl.searchParams.delete("billing");
+      window.history.replaceState({}, "", cleanUrl.toString());
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [company?.id, canAdmin]);
+
+  if (!canAdmin) return null;
+
+  const onUpgrade = async () => {
+    setWorking(true);
+    setError("");
+    try {
+      await startCheckoutForCompany(company.id);
+    } catch (err) {
+      setError(err?.message || "Could not start checkout.");
+      setWorking(false);
+    }
+  };
+
+  const onManage = async () => {
+    setWorking(true);
+    setError("");
+    try {
+      await openBillingPortal(company.id);
+    } catch (err) {
+      setError(err?.message || "Could not open billing portal.");
+      setWorking(false);
+    }
+  };
+
+  const status = billing?.stripe_subscription_status || null;
+  const isActive = status === "active" || status === "trialing";
+  const seatCount = Number(billing?.active_seat_count ?? 0);
+  const monthly = (seatCount * 10).toFixed(2);
+  const periodEndLabel = billing?.stripe_current_period_end
+    ? new Date(billing.stripe_current_period_end).toLocaleDateString()
+    : null;
+
+  return (
+    <Card className="rounded-3xl border-0 shadow-lg">
+      <CardContent className="p-5">
+        <div className="mb-3 flex items-center justify-between gap-3">
+          <div className="flex items-center gap-2 font-bold text-slate-950">
+            <CreditCard size={18} /> Billing
+            {!loading && <BillingBadge status={status} />}
+          </div>
+          <Button onClick={load} variant="secondary" className="rounded-2xl px-3 py-2"><RefreshCw size={15} /></Button>
+        </div>
+
+        {!isActive && (
+          <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+            <p className="text-sm leading-6 text-slate-700">
+              Subscribe to unlock unlimited team members. <strong>$10/month per active member</strong> —
+              your current count is <strong>{seatCount}</strong>, so the first invoice would be <strong>${monthly}</strong>.
+              Add or remove members anytime; Stripe prorates the next invoice.
+            </p>
+            <Button onClick={onUpgrade} disabled={working} className="mt-3 rounded-2xl px-4 py-3">
+              <ExternalLink size={15} className="mr-2" />
+              {working ? "Opening Stripe..." : "Upgrade — open Stripe Checkout"}
+            </Button>
+          </div>
+        )}
+
+        {isActive && (
+          <div className="rounded-2xl border border-emerald-200 bg-emerald-50 p-4 text-sm leading-6 text-emerald-950">
+            <div className="flex items-center gap-2 font-bold">
+              <CheckCircle2 size={16} /> Subscription active
+            </div>
+            <div className="mt-2">
+              Billing <strong>{seatCount}</strong> active member{seatCount === 1 ? "" : "s"} at $10/month
+              {" "}= <strong>${monthly}/mo</strong>.
+              {periodEndLabel && <> Next invoice on <strong>{periodEndLabel}</strong>.</>}
+            </div>
+            <Button onClick={onManage} disabled={working} variant="secondary" className="mt-3 rounded-2xl px-4 py-3">
+              <ExternalLink size={15} className="mr-2" />
+              {working ? "Opening Stripe..." : "Manage Billing"}
+            </Button>
+          </div>
+        )}
+
+        {status && !isActive && (
+          <div className="mt-3 rounded-2xl bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-900">
+            Subscription status: {status}. Use Manage Billing to update payment details.
+            <Button onClick={onManage} disabled={working} variant="secondary" className="ml-2 rounded-2xl px-3 py-2">
+              Manage Billing
+            </Button>
+          </div>
+        )}
+
+        {error && (
+          <div className="mt-3 rounded-2xl bg-red-50 px-3 py-2 text-xs font-semibold text-red-800">{error}</div>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
 export function CompanyAdminPanel({ company, membership }) {
   const [members, setMembers] = useState([]);
   const [invites, setInvites] = useState([]);
@@ -362,16 +504,23 @@ export function CompanyAdminPanel({ company, membership }) {
 
   if (!canAdmin) return null;
 
+  const seatLimitLabel = company.seat_limit === null || company.seat_limit === undefined
+    ? "unlimited"
+    : String(company.seat_limit);
+
   return (
-    <Card className="rounded-3xl border-0 shadow-lg">
-      <CardContent className="p-5">
-        <div className="mb-4 flex items-center justify-between gap-3">
-          <div>
-            <div className="flex items-center gap-2 font-bold text-slate-950"><Users size={18} /> Team</div>
-            <p className="mt-1 text-xs text-slate-500">{company.name} seats: {members.length}/{company.seat_limit}</p>
+    <div className="space-y-4">
+      <BillingPanel company={company} canAdmin={canAdmin} />
+
+      <Card className="rounded-3xl border-0 shadow-lg">
+        <CardContent className="p-5">
+          <div className="mb-4 flex items-center justify-between gap-3">
+            <div>
+              <div className="flex items-center gap-2 font-bold text-slate-950"><Users size={18} /> Team</div>
+              <p className="mt-1 text-xs text-slate-500">{company.name} seats: {members.length}/{seatLimitLabel}</p>
+            </div>
+            <Button onClick={load} variant="secondary" className="rounded-2xl px-3 py-2"><RefreshCw size={15} /></Button>
           </div>
-          <Button onClick={load} variant="secondary" className="rounded-2xl px-3 py-2"><RefreshCw size={15} /></Button>
-        </div>
 
         <div className="mb-4 flex flex-col gap-3 rounded-2xl border border-slate-200 bg-slate-50 p-4 md:flex-row md:items-center md:justify-between">
           <div>
@@ -427,8 +576,9 @@ export function CompanyAdminPanel({ company, membership }) {
                 </div>
               );
             })}
-        </div>
-      </CardContent>
-    </Card>
+          </div>
+        </CardContent>
+      </Card>
+    </div>
   );
 }
