@@ -26,6 +26,9 @@ import { motion } from "framer-motion";
 import { MapContainer, Marker, Popup, TileLayer, useMap } from "react-leaflet";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
+import "leaflet.markercluster";
+import "leaflet.markercluster/dist/MarkerCluster.css";
+import "leaflet.markercluster/dist/MarkerCluster.Default.css";
 import * as EL from "esri-leaflet";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -293,6 +296,53 @@ const BASEMAPS = {
   ],
 };
 
+function ClusteredPoints({ points, selectedPoint, onSelectPoint }) {
+  const map = useMap();
+  useEffect(() => {
+    const cluster = L.markerClusterGroup({
+      showCoverageOnHover: false,
+      spiderfyOnMaxZoom: true,
+      maxClusterRadius: 60,
+      chunkedLoading: true,
+    });
+
+    const selectedKey = pointKey(selectedPoint);
+    const escapeHtml = (text) => String(text ?? "").replace(/[&<>"']/g, (ch) => ({
+      "&": "&amp;",
+      "<": "&lt;",
+      ">": "&gt;",
+      '"': "&quot;",
+      "'": "&#39;",
+    })[ch]);
+
+    points.forEach((point) => {
+      if (!point.lat || !point.lng) return;
+      const selected = selectedKey === pointKey(point);
+      const marker = L.marker([Number(point.lat), Number(point.lng)], {
+        icon: pointIcon(point.status, selected),
+      });
+      marker.on("click", () => onSelectPoint(point));
+      const popupHtml = `
+        <div style="font-size:12px">
+          <strong>${escapeHtml(point.id)}</strong><br/>
+          ${escapeHtml(point.description || point.name || "")}<br/>
+          <span>${escapeHtml(formatDistance(point.distanceFeet))} away</span><br/>
+          <span>${escapeHtml(point.sourceFile || point.job || "No source file")}</span>
+        </div>
+      `;
+      marker.bindPopup(popupHtml);
+      cluster.addLayer(marker);
+    });
+
+    map.addLayer(cluster);
+    return () => {
+      map.removeLayer(cluster);
+    };
+  }, [map, points, selectedPoint, onSelectPoint]);
+
+  return null;
+}
+
 function MapInteractionCapture({ onUserInteract }) {
   const map = useMap();
   useEffect(() => {
@@ -403,30 +453,7 @@ function GisMap({ points, selectedPoint, userLocation, followUser, onUserPan, on
               </Popup>
             </Marker>
           )}
-          {points.map((point) => {
-            if (!point.lat || !point.lng) return null;
-            const selected = pointKey(selectedPoint) === pointKey(point);
-            return (
-              <Marker
-                key={`${pointKey(point)}-${point.lat}-${point.lng}`}
-                position={[Number(point.lat), Number(point.lng)]}
-                icon={pointIcon(point.status, selected)}
-                eventHandlers={{ click: () => onSelectPoint(point) }}
-              >
-                <Popup>
-                  <div className="min-w-48">
-                    <strong>{point.id}</strong>
-                    <br />
-                    {point.description || point.name}
-                    <br />
-                    <span>{formatDistance(point.distanceFeet)} away</span>
-                    <br />
-                    <span>{point.sourceFile || point.job || "No source file"}</span>
-                  </div>
-                </Popup>
-              </Marker>
-            );
-          })}
+          <ClusteredPoints points={points} selectedPoint={selectedPoint} onSelectPoint={onSelectPoint} />
         </MapContainer>
       </CardContent>
     </Card>
