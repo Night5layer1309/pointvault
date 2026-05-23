@@ -208,32 +208,77 @@ function ParcelOverlay() {
   return null;
 }
 
-function GisMap({ points, selectedPoint, userLocation, followUser, onSelectPoint, basemap, showParcels }) {
-  const fallbackCenter = [30.7, -86.1];
-  const center = userLocation ? [userLocation.lat, userLocation.lng] : fallbackCenter;
-
-  const basemaps = {
-    streets: {
-      url: "https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png",
-      attribution: "&copy; OpenStreetMap contributors",
-    },
-    topo: {
-      url: "https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png",
-      attribution: "Map data: &copy; OpenStreetMap contributors, SRTM | Map style: &copy; OpenTopoMap",
-    },
-    aerial: {
+const BASEMAPS = {
+  aerial: [
+    {
       url: "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}",
       attribution: "Tiles &copy; Esri, Maxar, Earthstar Geographics, and the GIS User Community",
     },
-  };
+  ],
+  hybrid: [
+    {
+      url: "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}",
+      attribution: "Tiles &copy; Esri, Maxar, Earthstar Geographics",
+    },
+    {
+      url: "https://services.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}",
+      attribution: "",
+    },
+    {
+      url: "https://services.arcgisonline.com/ArcGIS/rest/services/Reference/World_Transportation/MapServer/tile/{z}/{y}/{x}",
+      attribution: "",
+    },
+  ],
+  streets: [
+    {
+      url: "https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png",
+      attribution: "&copy; OpenStreetMap contributors &copy; CARTO",
+      subdomains: "abcd",
+      maxZoom: 19,
+    },
+  ],
+  topo: [
+    {
+      url: "https://server.arcgisonline.com/ArcGIS/rest/services/World_Topo_Map/MapServer/tile/{z}/{y}/{x}",
+      attribution: "Tiles &copy; Esri — USGS, NOAA",
+    },
+  ],
+};
 
-  const selectedBasemap = basemaps[basemap] || basemaps.aerial;
+function MapInteractionCapture({ onUserInteract }) {
+  const map = useMap();
+  useEffect(() => {
+    if (!onUserInteract) return undefined;
+    const handler = () => onUserInteract();
+    map.on("dragstart", handler);
+    map.on("wheel", handler);
+    return () => {
+      map.off("dragstart", handler);
+      map.off("wheel", handler);
+    };
+  }, [map, onUserInteract]);
+  return null;
+}
+
+function GisMap({ points, selectedPoint, userLocation, followUser, onUserPan, onSelectPoint, basemap, showParcels }) {
+  const fallbackCenter = [30.7, -86.1];
+  const center = userLocation ? [userLocation.lat, userLocation.lng] : fallbackCenter;
+  const selectedBasemap = BASEMAPS[basemap] || BASEMAPS.aerial;
 
   return (
     <Card className="overflow-hidden rounded-3xl border-0 shadow-lg">
       <CardContent className="relative h-[420px] p-0">
         <MapContainer center={center} zoom={userLocation ? 15 : 8} className="h-full w-full" scrollWheelZoom>
-          <TileLayer attribution={selectedBasemap.attribution} url={selectedBasemap.url} />
+          {selectedBasemap.map((layer, index) => (
+            <TileLayer
+              key={`${basemap}-${index}`}
+              url={layer.url}
+              attribution={layer.attribution}
+              subdomains={layer.subdomains}
+              maxZoom={layer.maxZoom}
+            />
+          ))}
+          <MapInteractionCapture onUserInteract={onUserPan} />
           {showParcels && <ParcelOverlay />}
           {followUser && userLocation && <RecenterMap center={[userLocation.lat, userLocation.lng]} zoom={16} />}
           {userLocation && (
@@ -822,7 +867,6 @@ export default function SurveyPointAppPrototype() {
       return next.accuracy <= current.accuracy + 10 ? next : current;
     });
 
-    setFollowUser(true);
     localStorage.setItem(USER_LOCATION_KEY, JSON.stringify(next));
     setLocationMessage(`GPS active. Accuracy about ${next.accuracy ? Math.round(next.accuracy).toLocaleString() + " ft" : "unknown"}.`);
 
@@ -1112,6 +1156,9 @@ export default function SurveyPointAppPrototype() {
                 <Button onClick={() => setBasemap("aerial")} variant={basemap === "aerial" ? "default" : "secondary"} className="rounded-2xl px-4 py-3">
                   <Satellite size={16} className="mr-2" /> Aerial
                 </Button>
+                <Button onClick={() => setBasemap("hybrid")} variant={basemap === "hybrid" ? "default" : "secondary"} className="rounded-2xl px-4 py-3">
+                  <Layers size={16} className="mr-2" /> Hybrid
+                </Button>
                 <Button onClick={() => setBasemap("streets")} variant={basemap === "streets" ? "default" : "secondary"} className="rounded-2xl px-4 py-3">
                   <Map size={16} className="mr-2" /> Streets
                 </Button>
@@ -1121,12 +1168,31 @@ export default function SurveyPointAppPrototype() {
                 <Button onClick={() => setShowParcels((value) => !value)} variant={showParcels ? "default" : "secondary"} className="rounded-2xl px-4 py-3">
                   <Filter size={16} className="mr-2" /> Parcels
                 </Button>
+                <Button
+                  onClick={() => setFollowUser((value) => !value)}
+                  variant={followUser ? "default" : "secondary"}
+                  className="rounded-2xl px-4 py-3"
+                  disabled={!userLocation}
+                  title={userLocation ? "" : "No GPS location available"}
+                >
+                  <LocateFixed size={16} className="mr-2" /> Follow GPS {followUser ? "on" : "off"}
+                </Button>
+                {!followUser && userLocation && (
+                  <Button
+                    onClick={() => setFollowUser(true)}
+                    variant="secondary"
+                    className="rounded-2xl px-4 py-3"
+                  >
+                    <Target size={16} className="mr-2" /> Recenter
+                  </Button>
+                )}
               </div>
               <GisMap
                 points={filteredPoints}
                 selectedPoint={selectedPoint}
                 userLocation={userLocation}
                 followUser={followUser}
+                onUserPan={() => { if (followUser) setFollowUser(false); }}
                 onSelectPoint={selectPoint}
                 basemap={basemap}
                 showParcels={showParcels}
