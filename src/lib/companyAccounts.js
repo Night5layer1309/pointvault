@@ -118,6 +118,25 @@ export async function fetchCompanyInvites(companyId) {
   return data || [];
 }
 
+export async function listCommunityPointNotes({ communityPointId, companyId }) {
+  const { data, error } = await supabase.rpc("list_community_point_notes", {
+    target_community_point_id: communityPointId,
+    target_company_id: companyId,
+  });
+  if (error) throw error;
+  return data || [];
+}
+
+export async function addCommunityPointNote({ communityPointId, companyId, body }) {
+  const { data, error } = await supabase.rpc("add_community_point_note", {
+    target_community_point_id: communityPointId,
+    target_company_id: companyId,
+    note_body: body,
+  });
+  if (error) throw error;
+  return data;
+}
+
 export async function fetchNearbyCompanyPoints({
   companyId,
   location,

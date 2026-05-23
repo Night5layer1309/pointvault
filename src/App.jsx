@@ -34,8 +34,10 @@ import {
   SignInPanel,
 } from "@/components/CompanyAccountPanel";
 import {
+  addCommunityPointNote,
   fetchNearbyCompanyPoints,
   getCurrentSession,
+  listCommunityPointNotes,
   onAuthChange,
 } from "@/lib/companyAccounts";
 import {
@@ -301,7 +303,117 @@ function PointCard({ point, selected, onClick }) {
   );
 }
 
-function PointDetail({ point, onUpdatePoint, onDeletePoint, canDeletePoints }) {
+function CommunityFieldNotesSection({ point, company }) {
+  const [notes, setNotes] = useState([]);
+  const [draft, setDraft] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [posting, setPosting] = useState(false);
+  const [error, setError] = useState("");
+
+  const canShow = !!company?.id
+    && !!point?.id
+    && ["contributor", "balanced"].includes(point.access_level);
+
+  const load = async () => {
+    if (!canShow) return;
+    setLoading(true);
+    setError("");
+    try {
+      const rows = await listCommunityPointNotes({
+        communityPointId: point.id,
+        companyId: company.id,
+      });
+      setNotes(rows);
+    } catch (loadError) {
+      setError(loadError.message || "Could not load field notes.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    setNotes([]);
+    setDraft("");
+    setError("");
+    load();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [point?.id, company?.id, point?.access_level]);
+
+  const post = async () => {
+    const body = draft.trim();
+    if (!body) return;
+    setPosting(true);
+    setError("");
+    try {
+      await addCommunityPointNote({
+        communityPointId: point.id,
+        companyId: company.id,
+        body,
+      });
+      setDraft("");
+      await load();
+    } catch (postError) {
+      setError(postError.message || "Could not post field note.");
+    } finally {
+      setPosting(false);
+    }
+  };
+
+  if (!canShow) return null;
+
+  return (
+    <div className="mt-4 rounded-3xl border border-emerald-200 bg-emerald-50 p-3">
+      <div className="mb-2 flex items-center justify-between">
+        <div className="font-bold text-emerald-950">Community Field Notes</div>
+        {loading && <span className="text-xs font-semibold text-emerald-700">Loading...</span>}
+      </div>
+      <p className="mb-3 text-xs leading-5 text-emerald-800">
+        Append-only notes from companies that have shared a point at this location.
+      </p>
+
+      <div className="mb-3 space-y-2">
+        {notes.length === 0 && !loading && (
+          <div className="rounded-2xl bg-white px-3 py-2 text-xs text-slate-500 ring-1 ring-emerald-100">
+            No field notes yet. Be the first.
+          </div>
+        )}
+        {notes.map((note) => (
+          <div key={note.id} className="rounded-2xl bg-white px-3 py-2 text-sm text-slate-800 ring-1 ring-emerald-100">
+            <div className="text-xs font-semibold text-emerald-900">
+              {note.company_name || "Unknown company"}
+              {note.user_email ? ` · ${note.user_email}` : ""}
+              {note.created_at ? ` · ${new Date(note.created_at).toLocaleString()}` : ""}
+            </div>
+            <div className="mt-1 whitespace-pre-wrap leading-6">{note.body}</div>
+          </div>
+        ))}
+      </div>
+
+      <textarea
+        value={draft}
+        onChange={(event) => setDraft(event.target.value)}
+        placeholder="Share what you found here. Notes are permanent (no edits, no deletes)."
+        className="min-h-20 w-full rounded-2xl border border-emerald-200 bg-white px-4 py-3 text-sm outline-none focus:border-emerald-500"
+        maxLength={4000}
+        disabled={posting}
+      />
+      <Button
+        onClick={post}
+        disabled={posting || !draft.trim()}
+        className="mt-2 w-full rounded-2xl py-5"
+      >
+        <Save size={16} className="mr-2" /> {posting ? "Posting..." : "Post Field Note"}
+      </Button>
+      {error && (
+        <div className="mt-2 rounded-2xl bg-red-50 px-3 py-2 text-xs font-semibold text-red-800 ring-1 ring-red-100">
+          {error}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function PointDetail({ point, company, onUpdatePoint, onDeletePoint, canDeletePoints }) {
   const [newNote, setNewNote] = useState("");
   const [newStatus, setNewStatus] = useState(point.status || "found");
 
@@ -435,6 +547,8 @@ function PointDetail({ point, onUpdatePoint, onDeletePoint, canDeletePoints }) {
               <Save size={16} className="mr-2" /> Save Local Observation
             </Button>
           </div>
+
+          <CommunityFieldNotesSection point={point} company={company} />
         </CardContent>
       </Card>
     </motion.div>
@@ -1034,6 +1148,7 @@ export default function SurveyPointAppPrototype() {
               {selectedPoint ? (
                 <PointDetail
                   point={selectedPoint}
+                  company={activeCompany}
                   onUpdatePoint={updatePoint}
                   onDeletePoint={deleteCompanyPoint}
                   canDeletePoints={canDeletePoints}
@@ -1085,6 +1200,7 @@ export default function SurveyPointAppPrototype() {
           {selectedPoint ? (
             <PointDetail
               point={selectedPoint}
+              company={activeCompany}
               onUpdatePoint={updatePoint}
               onDeletePoint={deleteCompanyPoint}
               canDeletePoints={canDeletePoints}
