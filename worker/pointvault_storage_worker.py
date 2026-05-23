@@ -35,6 +35,7 @@ from __future__ import annotations
 import csv
 import json
 import os
+import signal
 import tempfile
 import time
 from dataclasses import dataclass
@@ -42,6 +43,13 @@ from pathlib import Path
 from typing import Any
 
 import requests
+
+
+def _handle_termination(signum: int, _frame) -> None:
+    raise KeyboardInterrupt(f"Received signal {signum}")
+
+
+signal.signal(signal.SIGTERM, _handle_termination)
 
 
 def load_worker_env(env_path: str = ".env.worker") -> None:
@@ -519,6 +527,21 @@ def process_one_job(api: PointVaultApi) -> bool:
             },
         )
         return True
+
+    except BaseException as exc:
+        message = f"Worker interrupted by {type(exc).__name__} before job completed."
+        print(message)
+        try:
+            api.rpc(
+                "mark_storage_import_failed",
+                {
+                    "target_import_job_id": job_id,
+                    "worker_message": message,
+                },
+            )
+        except Exception:
+            pass
+        raise
 
 
 def main() -> None:
