@@ -269,15 +269,12 @@ function GisMap({ points, selectedPoint, userLocation, followUser, onUserPan, on
     <Card className="overflow-hidden rounded-3xl border-0 shadow-lg">
       <CardContent className="relative h-[420px] p-0">
         <MapContainer center={center} zoom={userLocation ? 15 : 8} className="h-full w-full" scrollWheelZoom>
-          {selectedBasemap.map((layer, index) => (
-            <TileLayer
-              key={`${basemap}-${index}`}
-              url={layer.url}
-              attribution={layer.attribution}
-              subdomains={layer.subdomains}
-              maxZoom={layer.maxZoom}
-            />
-          ))}
+          {selectedBasemap.map((layer, index) => {
+            const layerProps = { url: layer.url, attribution: layer.attribution };
+            if (layer.subdomains) layerProps.subdomains = layer.subdomains;
+            if (layer.maxZoom) layerProps.maxZoom = layer.maxZoom;
+            return <TileLayer key={`${basemap}-${index}`} {...layerProps} />;
+          })}
           <MapInteractionCapture onUserInteract={onUserPan} />
           {showParcels && <ParcelOverlay />}
           {followUser && userLocation && <RecenterMap center={[userLocation.lat, userLocation.lng]} zoom={16} />}
