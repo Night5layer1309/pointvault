@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import {
   AlertTriangle,
   CheckCircle2,
@@ -212,9 +212,18 @@ function ReliabilityBadge({ rating }) {
 
 function RecenterMap({ center, zoom }) {
   const map = useMap();
+  const isFirstSnap = useRef(true);
+  const lat = center?.[0];
+  const lng = center?.[1];
   useEffect(() => {
-    if (center) map.setView(center, zoom || map.getZoom(), { animate: true });
-  }, [center, zoom, map]);
+    if (lat == null || lng == null) return;
+    if (isFirstSnap.current) {
+      map.setView([lat, lng], zoom || map.getZoom() || 16, { animate: true });
+      isFirstSnap.current = false;
+    } else {
+      map.panTo([lat, lng], { animate: true });
+    }
+  }, [lat, lng, map, zoom]);
   return null;
 }
 
