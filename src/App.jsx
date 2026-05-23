@@ -789,6 +789,11 @@ export default function SurveyPointAppPrototype() {
   const [userLocation, setUserLocation] = useState(null);
   const [followUser, setFollowUser] = useState(true);
 
+  const [locationMessage, setLocationMessage] = useState("Tap You Are Here to use phone GPS.");
+  const [gpsWatchId, setGpsWatchId] = useState(null);
+  const [basemap, setBasemap] = useState(() => loadInitialPrefs().basemap);
+  const [showParcels, setShowParcels] = useState(false);
+
   useEffect(() => {
     if (typeof document === "undefined") return;
     const root = document.documentElement;
@@ -816,10 +821,6 @@ export default function SurveyPointAppPrototype() {
     setDefaultCoordEpsg(epsg);
     setDefaultCoordName(name);
   };
-  const [locationMessage, setLocationMessage] = useState("Tap You Are Here to use phone GPS.");
-  const [gpsWatchId, setGpsWatchId] = useState(null);
-  const [basemap, setBasemap] = useState(() => loadInitialPrefs().basemap);
-  const [showParcels, setShowParcels] = useState(false);
 
   const canDeletePoints = ["owner", "admin"].includes(activeMembership?.role);
 
