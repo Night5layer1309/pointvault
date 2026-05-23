@@ -99,13 +99,30 @@ export async function acceptInvite(token) {
 }
 
 export async function fetchCompanyMembers(companyId) {
-  const { data, error } = await supabase
+  const { data: memberships, error } = await supabase
     .from("company_memberships")
-    .select("id, role, status, created_at, profile:profiles(id, email, full_name)")
+    .select("id, role, status, created_at, user_id")
     .eq("company_id", companyId)
     .order("created_at", { ascending: true });
   if (error) throw error;
-  return data || [];
+  if (!memberships || memberships.length === 0) return [];
+
+  const userIds = Array.from(new Set(memberships.map((row) => row.user_id).filter(Boolean)));
+  if (userIds.length === 0) {
+    return memberships.map((row) => ({ ...row, profile: null }));
+  }
+
+  const { data: profiles, error: profileError } = await supabase
+    .from("profiles")
+    .select("id, email, full_name")
+    .in("id", userIds);
+  if (profileError) throw profileError;
+
+  const profileMap = new Map((profiles || []).map((profile) => [profile.id, profile]));
+  return memberships.map((row) => ({
+    ...row,
+    profile: profileMap.get(row.user_id) || null,
+  }));
 }
 
 export async function fetchCompanyInvites(companyId) {
