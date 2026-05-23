@@ -16,6 +16,7 @@ import {
   Satellite,
   Save,
   Search,
+  Settings as SettingsIcon,
   Target,
   Upload,
   WifiOff,
@@ -33,6 +34,7 @@ import {
   CompanySetupPanel,
   SignInPanel,
 } from "@/components/CompanyAccountPanel";
+import { SettingsTab } from "@/components/SettingsTab";
 import {
   addCommunityPointNote,
   fetchNearbyCompanyPoints,
@@ -47,6 +49,36 @@ import {
 import { DataImportPanel } from "@/components/DataImportPanel";
 
 const USER_LOCATION_KEY = "pointvault-last-user-location-v1";
+const THEME_KEY = "pointvault-theme";
+const PREFS_KEY = "pointvault-prefs-v1";
+
+function loadInitialTheme() {
+  if (typeof window === "undefined") return "light";
+  try {
+    const stored = window.localStorage.getItem(THEME_KEY);
+    return stored === "dark" ? "dark" : "light";
+  } catch {
+    return "light";
+  }
+}
+
+function loadInitialPrefs() {
+  const defaults = {
+    basemap: "aerial",
+    radius: 5280,
+    coordEpsg: "2238",
+    coordName: "NAD83 / Florida North (ftUS)",
+  };
+  if (typeof window === "undefined") return defaults;
+  try {
+    const raw = window.localStorage.getItem(PREFS_KEY);
+    if (!raw) return defaults;
+    const parsed = JSON.parse(raw);
+    return { ...defaults, ...parsed };
+  } catch {
+    return defaults;
+  }
+}
 
 const statusMeta = {
   found: {
@@ -741,21 +773,52 @@ export default function SurveyPointAppPrototype() {
   const [points, setPoints] = useState([]);
   const [query, setQuery] = useState("");
   const [status, setStatus] = useState("all");
-  const [maxDistanceFeet, setMaxDistanceFeet] = useState(5280);
+  const [maxDistanceFeet, setMaxDistanceFeet] = useState(() => loadInitialPrefs().radius);
   const [resultLimit, setResultLimit] = useState(500);
   const [loadingPoints, setLoadingPoints] = useState(false);
   const [mapCenter, setMapCenter] = useState(null);
   const [flyToTarget, setFlyToTarget] = useState(null);
   const [findingAddress, setFindingAddress] = useState(false);
   const [findMessage, setFindMessage] = useState("");
+  const [theme, setTheme] = useState(loadInitialTheme);
+  const [defaultCoordEpsg, setDefaultCoordEpsg] = useState(() => loadInitialPrefs().coordEpsg);
+  const [defaultCoordName, setDefaultCoordName] = useState(() => loadInitialPrefs().coordName);
   const [pointLoadMessage, setPointLoadMessage] = useState("Tap You Are Here to load nearby company points.");
   const [selectedPointId, setSelectedPointId] = useState(null);
   const [tab, setTab] = useState("map");
   const [userLocation, setUserLocation] = useState(null);
   const [followUser, setFollowUser] = useState(true);
+
+  useEffect(() => {
+    if (typeof document === "undefined") return;
+    const root = document.documentElement;
+    if (theme === "dark") root.classList.add("dark");
+    else root.classList.remove("dark");
+    try { window.localStorage.setItem(THEME_KEY, theme); } catch (err) { void err; }
+  }, [theme]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    try {
+      window.localStorage.setItem(
+        PREFS_KEY,
+        JSON.stringify({
+          basemap,
+          radius: maxDistanceFeet,
+          coordEpsg: defaultCoordEpsg,
+          coordName: defaultCoordName,
+        }),
+      );
+    } catch (err) { void err; }
+  }, [basemap, maxDistanceFeet, defaultCoordEpsg, defaultCoordName]);
+
+  const updateDefaultCoord = (epsg, name) => {
+    setDefaultCoordEpsg(epsg);
+    setDefaultCoordName(name);
+  };
   const [locationMessage, setLocationMessage] = useState("Tap You Are Here to use phone GPS.");
   const [gpsWatchId, setGpsWatchId] = useState(null);
-  const [basemap, setBasemap] = useState("aerial");
+  const [basemap, setBasemap] = useState(() => loadInitialPrefs().basemap);
   const [showParcels, setShowParcels] = useState(false);
 
   const canDeletePoints = ["owner", "admin"].includes(activeMembership?.role);
@@ -1271,6 +1334,9 @@ export default function SurveyPointAppPrototype() {
               <Button onClick={() => setTab("import")} variant={tab === "import" ? "default" : "secondary"} className="rounded-2xl px-4 py-3">
                 <Upload size={16} className="mr-2" /> Data Import
               </Button>
+              <Button onClick={() => setTab("settings")} variant={tab === "settings" ? "default" : "secondary"} className="rounded-2xl px-4 py-3">
+                <SettingsIcon size={16} className="mr-2" /> Settings
+              </Button>
             </CardContent>
           </Card>
 
@@ -1368,6 +1434,21 @@ export default function SurveyPointAppPrototype() {
               company={activeCompany}
               membership={activeMembership}
               onImportPromoted={() => loadNearbyPoints()}
+              defaultEpsg={defaultCoordEpsg}
+              defaultCoordinateSystem={defaultCoordName}
+            />
+          )}
+
+          {tab === "settings" && (
+            <SettingsTab
+              theme={theme}
+              onThemeChange={setTheme}
+              defaultBasemap={basemap}
+              onDefaultBasemapChange={setBasemap}
+              defaultRadius={maxDistanceFeet}
+              onDefaultRadiusChange={setMaxDistanceFeet}
+              defaultCoordEpsg={defaultCoordEpsg}
+              onDefaultCoordChange={updateDefaultCoord}
             />
           )}
         </section>

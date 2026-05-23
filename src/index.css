@@ -1,5 +1,7 @@
 @import "tailwindcss";
 
+@custom-variant dark (&:where(.dark, .dark *));
+
 html,
 body,
 #root {
@@ -7,7 +9,71 @@ body,
   margin: 0;
 }
 
+body {
+  background-color: #f1f5f9;
+  color: #0f172a;
+}
+
+.dark body {
+  background-color: #020617;
+  color: #f1f5f9;
+}
+
 .leaflet-container {
   height: 100%;
   width: 100%;
+}
+
+/* Dark mode overrides for components that haven't been individually updated
+   with dark: variants. Specificity (.dark + class) wins over plain class. */
+.dark .bg-white { background-color: #1e293b; }
+.dark .bg-white\/95 { background-color: rgb(15 23 42 / 0.92); }
+.dark .bg-slate-50 { background-color: #0f172a; }
+.dark .bg-slate-100 { background-color: #1e293b; }
+.dark .bg-blue-50 { background-color: #172554; }
+.dark .bg-amber-50 { background-color: #451a03; }
+.dark .bg-emerald-50 { background-color: #064e3b; }
+.dark .bg-red-50 { background-color: #450a0a; }
+
+.dark .text-slate-950 { color: #f1f5f9; }
+.dark .text-slate-900 { color: #e2e8f0; }
+.dark .text-slate-700 { color: #cbd5e1; }
+.dark .text-slate-600 { color: #cbd5e1; }
+.dark .text-slate-500 { color: #94a3b8; }
+.dark .text-slate-400 { color: #64748b; }
+.dark .text-blue-800,
+.dark .text-blue-900,
+.dark .text-blue-950 { color: #93c5fd; }
+.dark .text-amber-800,
+.dark .text-amber-900 { color: #fcd34d; }
+.dark .text-emerald-700,
+.dark .text-emerald-800,
+.dark .text-emerald-900,
+.dark .text-emerald-950 { color: #6ee7b7; }
+.dark .text-red-800,
+.dark .text-red-900 { color: #fca5a5; }
+
+.dark .border-slate-200 { border-color: #334155; }
+.dark .border-slate-100 { border-color: #1e293b; }
+.dark .border-blue-100,
+.dark .border-blue-200 { border-color: #1e3a8a; }
+.dark .border-amber-200 { border-color: #78350f; }
+.dark .border-emerald-100,
+.dark .border-emerald-200 { border-color: #065f46; }
+.dark .border-red-200 { border-color: #7f1d1d; }
+
+.dark .ring-slate-100,
+.dark .ring-slate-200 { --tw-ring-color: #334155; }
+.dark .ring-blue-100 { --tw-ring-color: #1e3a8a; }
+.dark .ring-emerald-100 { --tw-ring-color: #065f46; }
+.dark .ring-red-100 { --tw-ring-color: #7f1d1d; }
+
+.dark input,
+.dark select,
+.dark textarea {
+  color-scheme: dark;
+}
+
+.dark .leaflet-container {
+  background-color: #0f172a;
 }

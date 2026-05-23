@@ -140,12 +140,12 @@ function JobBadge({ children }) {
   );
 }
 
-export function DataImportPanel({ company, membership }) {
+export function DataImportPanel({ company, membership, defaultEpsg, defaultCoordinateSystem }) {
   const [singleFile, setSingleFile] = useState(null);
   const [batchFiles, setBatchFiles] = useState([]);
-  const [declaredEpsg, setDeclaredEpsg] = useState("2238");
+  const [declaredEpsg, setDeclaredEpsg] = useState(defaultEpsg || "2238");
   const [declaredCoordinateSystem, setDeclaredCoordinateSystem] = useState(
-    "NAD83 / Florida North (ftUS)",
+    defaultCoordinateSystem || "NAD83 / Florida North (ftUS)",
   );
   const [defaultVisibility, setDefaultVisibility] = useState("company");
 
