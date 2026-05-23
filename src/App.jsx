@@ -298,14 +298,50 @@ function MapInteractionCapture({ onUserInteract }) {
   useEffect(() => {
     if (!onUserInteract) return undefined;
     const handler = () => onUserInteract();
+    const touchHandler = (event) => {
+      if (event?.originalEvent?.touches?.length >= 2) onUserInteract();
+    };
     map.on("dragstart", handler);
     map.on("wheel", handler);
+    map.on("touchstart", touchHandler);
     return () => {
       map.off("dragstart", handler);
       map.off("wheel", handler);
+      map.off("touchstart", touchHandler);
     };
   }, [map, onUserInteract]);
   return null;
+}
+
+function GpsFreshness({ userLocation }) {
+  const [, setTick] = useState(0);
+  useEffect(() => {
+    if (!userLocation?.timestamp) return undefined;
+    const id = setInterval(() => setTick((value) => value + 1), 1000);
+    return () => clearInterval(id);
+  }, [userLocation?.timestamp]);
+
+  if (!userLocation?.timestamp) return null;
+  const elapsed = Math.max(0, Math.floor((Date.now() - userLocation.timestamp) / 1000));
+  let label;
+  let className;
+  if (elapsed < 5) {
+    label = "GPS just now";
+    className = "text-emerald-700";
+  } else if (elapsed < 30) {
+    label = `GPS ${elapsed}s ago`;
+    className = "text-emerald-700";
+  } else if (elapsed < 120) {
+    label = `GPS ${elapsed}s ago — stale`;
+    className = "text-amber-700";
+  } else if (elapsed < 3600) {
+    label = `GPS ${Math.floor(elapsed / 60)}m ago — no recent signal`;
+    className = "text-red-700";
+  } else {
+    label = `GPS ${Math.floor(elapsed / 3600)}h ago — no signal`;
+    className = "text-red-700";
+  }
+  return <span className={`text-xs font-bold ${className}`}>{label}</span>;
 }
 
 function MapCenterTracker({ onCenterChange }) {
@@ -1313,9 +1349,10 @@ export default function SurveyPointAppPrototype() {
               </div>
 
               <div className="mt-3 flex flex-wrap items-center justify-between gap-3 text-sm text-slate-600">
-                <div className="flex items-center gap-2">
+                <div className="flex flex-wrap items-center gap-2">
                   <WifiOff size={15} />
                   <span>{locationMessage}</span>
+                  <GpsFreshness userLocation={userLocation} />
                 </div>
                 <div className="font-semibold">
                   Showing {filteredPoints.length.toLocaleString()} of {points.length.toLocaleString()} loaded points

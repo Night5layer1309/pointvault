@@ -13,6 +13,11 @@ dist-ssr
 *.local
 **/.env.worker
 
+# Python bytecode cache (worker)
+__pycache__/
+*.py[cod]
+*$py.class
+
 # Local-only test data and tool settings
 point test/
 .claude/
