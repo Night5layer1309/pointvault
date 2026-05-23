@@ -211,14 +211,16 @@ function ParcelOverlay() {
 const BASEMAPS = {
   aerial: [
     {
-      url: "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}",
-      attribution: "Tiles &copy; Esri, Maxar, Earthstar Geographics, and the GIS User Community",
+      url: "https://basemap.nationalmap.gov/arcgis/rest/services/USGSImageryOnly/MapServer/tile/{z}/{y}/{x}",
+      attribution: "Imagery &copy; U.S. Geological Survey",
+      maxZoom: 19,
     },
   ],
   hybrid: [
     {
-      url: "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}",
-      attribution: "Tiles &copy; Esri, Maxar, Earthstar Geographics",
+      url: "https://basemap.nationalmap.gov/arcgis/rest/services/USGSImageryOnly/MapServer/tile/{z}/{y}/{x}",
+      attribution: "Imagery &copy; U.S. Geological Survey",
+      maxZoom: 19,
     },
     {
       url: "https://services.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}",
