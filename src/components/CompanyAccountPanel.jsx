@@ -19,6 +19,7 @@ import {
   buildCompanyInviteUrl,
   createCompany,
   createCompanyInviteLink,
+  createOpenCompanyInviteLink,
   fetchCompanyInvites,
   fetchCompanyMembers,
   fetchCompanyMemberships,
@@ -293,6 +294,22 @@ export function CompanyAdminPanel({ company, membership }) {
     }
   };
 
+  const generateOpenInvite = async () => {
+    try {
+      const inviteLink = await createOpenCompanyInviteLink({
+        companyId: company.id,
+        ttlMinutes: 1440,
+        role: "member",
+        maxUses: null,
+      });
+      setLatestInvite({ ...inviteLink, email: "", role: "member" });
+      setMessage("Team QR ready. Show it to anyone you want to join — good for 24 hours.");
+      await load();
+    } catch (error) {
+      setMessage(error.message || "Could not create open invite.");
+    }
+  };
+
   if (!canAdmin) return null;
 
   return (
@@ -306,10 +323,22 @@ export function CompanyAdminPanel({ company, membership }) {
           <Button onClick={load} variant="secondary" className="rounded-2xl px-3 py-2"><RefreshCw size={15} /></Button>
         </div>
 
+        <div className="mb-4 flex flex-col gap-3 rounded-2xl border border-slate-200 bg-slate-50 p-4 md:flex-row md:items-center md:justify-between">
+          <div>
+            <div className="font-bold text-slate-950">Open team QR</div>
+            <p className="mt-1 text-xs leading-5 text-slate-500">
+              Show this to your team — anyone can scan to join. Good for 24 hours, unlimited scans.
+            </p>
+          </div>
+          <Button onClick={generateOpenInvite} className="rounded-2xl px-4 py-3">
+            <QrCode size={15} className="mr-2" /> Generate Team QR
+          </Button>
+        </div>
+
         <div className="mb-4 grid gap-2 md:grid-cols-[1fr_auto_auto]">
-          <input className="rounded-2xl border border-slate-200 px-4 py-3 text-sm outline-none focus:border-blue-400" placeholder="newuser@company.com" value={email} onChange={(e) => setEmail(e.target.value)} />
+          <input className="rounded-2xl border border-slate-200 px-4 py-3 text-sm outline-none focus:border-blue-400" placeholder="newuser@company.com (specific person)" value={email} onChange={(e) => setEmail(e.target.value)} />
           <select className="rounded-2xl border border-slate-200 px-3 py-3 text-sm" value={role} onChange={(e) => setRole(e.target.value)}><option value="member">Member</option><option value="admin">Admin</option></select>
-          <Button onClick={invite} className="rounded-2xl px-4 py-3"><Send size={15} className="mr-2" /> Invite</Button>
+          <Button onClick={invite} variant="secondary" className="rounded-2xl px-4 py-3"><Send size={15} className="mr-2" /> Invite</Button>
         </div>
 
         {message && <div className="mb-3 rounded-2xl bg-blue-50 p-3 text-xs font-semibold text-blue-900 break-all">{message}</div>}
@@ -322,15 +351,32 @@ export function CompanyAdminPanel({ company, membership }) {
               <span className="rounded-full bg-white px-2 py-1 text-xs font-bold text-slate-700">{row.role}</span>
             </div>
           ))}
-          {invites.filter((inviteRow) => !inviteRow.accepted_at).map((inviteRow) => {
-            const url = buildCompanyInviteUrl(inviteRow.token);
-            return (
-              <div key={inviteRow.id} className="rounded-2xl bg-amber-50 px-3 py-2 text-xs text-amber-900">
-                <div className="font-bold">Pending: {inviteRow.email} as {inviteRow.role}</div>
-                <div className="mt-1 break-all">{url}</div>
-              </div>
-            );
-          })}
+          {invites
+            .filter((inviteRow) => {
+              const isExpired = inviteRow.expires_at && new Date(inviteRow.expires_at) < new Date();
+              const isUsedUp = inviteRow.max_uses !== null && inviteRow.uses >= inviteRow.max_uses;
+              return !isExpired && !isUsedUp;
+            })
+            .map((inviteRow) => {
+              const url = buildCompanyInviteUrl(inviteRow.token);
+              const usageLabel = inviteRow.max_uses === null
+                ? `${inviteRow.uses} joined (unlimited)`
+                : `${inviteRow.uses}/${inviteRow.max_uses} used`;
+              const expiresLabel = inviteRow.expires_at
+                ? `expires ${new Date(inviteRow.expires_at).toLocaleString()}`
+                : "no expiry";
+              return (
+                <div key={inviteRow.id} className="rounded-2xl bg-amber-50 px-3 py-2 text-xs text-amber-900">
+                  <div className="font-bold">
+                    {inviteRow.email
+                      ? `Pending: ${inviteRow.email} as ${inviteRow.role}`
+                      : `Open team invite (${inviteRow.role})`}
+                  </div>
+                  <div className="mt-1 text-amber-700">{usageLabel} · {expiresLabel}</div>
+                  <div className="mt-1 break-all">{url}</div>
+                </div>
+              );
+            })}
         </div>
       </CardContent>
     </Card>

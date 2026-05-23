@@ -74,6 +74,22 @@ export async function createCompanyInviteLink({ companyId, email, role }) {
   return { token, url: buildCompanyInviteUrl(token) };
 }
 
+export async function createOpenCompanyInvite({ companyId, ttlMinutes = 1440, role = "member", maxUses = null }) {
+  const { data, error } = await supabase.rpc("create_open_company_invite", {
+    target_company_id: companyId,
+    ttl_minutes: ttlMinutes,
+    invite_role: role,
+    invite_max_uses: maxUses,
+  });
+  if (error) throw error;
+  return data;
+}
+
+export async function createOpenCompanyInviteLink({ companyId, ttlMinutes, role, maxUses }) {
+  const token = await createOpenCompanyInvite({ companyId, ttlMinutes, role, maxUses });
+  return { token, url: buildCompanyInviteUrl(token) };
+}
+
 export async function acceptInvite(token) {
   const { data, error } = await supabase.rpc("accept_company_invitation", {
     invite_token: token,
@@ -95,7 +111,7 @@ export async function fetchCompanyMembers(companyId) {
 export async function fetchCompanyInvites(companyId) {
   const { data, error } = await supabase
     .from("company_invites")
-    .select("id, email, role, token, accepted_at, expires_at, created_at")
+    .select("id, email, role, token, accepted_at, expires_at, created_at, max_uses, uses")
     .eq("company_id", companyId)
     .order("created_at", { ascending: false });
   if (error) throw error;
