@@ -835,51 +835,69 @@ export default function SurveyPointAppPrototype() {
   const findOrGeocode = async () => {
     const q = query.trim();
     if (!q) return;
-
     setFindMessage("");
 
-    if (filteredPoints.length > 0) {
+    const panToFilteredPoints = () => {
+      if (filteredPoints.length === 0) return false;
       if (filteredPoints.length === 1) {
         const p = filteredPoints[0];
         setFlyToTarget({ lat: p.lat, lng: p.lng, zoom: 19, key: Date.now() });
       } else {
-        const lats = filteredPoints.map((p) => p.lat).filter((n) => Number.isFinite(n));
-        const lngs = filteredPoints.map((p) => p.lng).filter((n) => Number.isFinite(n));
-        if (lats.length && lngs.length) {
-          const bounds = [
-            [Math.min(...lats), Math.min(...lngs)],
-            [Math.max(...lats), Math.max(...lngs)],
-          ];
-          setFlyToTarget({ bounds, maxZoom: 18, key: Date.now() });
-        }
+        const lats = filteredPoints.map((p) => p.lat).filter(Number.isFinite);
+        const lngs = filteredPoints.map((p) => p.lng).filter(Number.isFinite);
+        if (!lats.length || !lngs.length) return false;
+        const bounds = [
+          [Math.min(...lats), Math.min(...lngs)],
+          [Math.max(...lats), Math.max(...lngs)],
+        ];
+        setFlyToTarget({ bounds, maxZoom: 18, key: Date.now() });
       }
       setFollowUser(false);
       setTab("map");
-      return;
+      setFindMessage(`Showing ${filteredPoints.length.toLocaleString()} matching point${filteredPoints.length === 1 ? "" : "s"}.`);
+      return true;
+    };
+
+    const tryGeocode = async () => {
+      setFindingAddress(true);
+      try {
+        const url = `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(q)}&format=json&limit=1`;
+        const response = await fetch(url);
+        if (!response.ok) {
+          console.error("Geocode HTTP", response.status);
+          return false;
+        }
+        const results = await response.json();
+        if (!Array.isArray(results) || results.length === 0) return false;
+        const lat = Number(results[0].lat);
+        const lng = Number(results[0].lon);
+        if (!Number.isFinite(lat) || !Number.isFinite(lng)) return false;
+        setFlyToTarget({ lat, lng, zoom: 17, key: Date.now() });
+        setFollowUser(false);
+        setTab("map");
+        await loadNearbyPoints({ lat, lng });
+        setFindMessage(`Found: ${results[0].display_name}`);
+        return true;
+      } catch (err) {
+        console.error("Geocode error:", err);
+        setFindMessage(`Address lookup failed: ${err.message || "network error"}`);
+        return false;
+      } finally {
+        setFindingAddress(false);
+      }
+    };
+
+    const multiWord = q.split(/\s+/).length > 1;
+
+    if (multiWord) {
+      if (await tryGeocode()) return;
+      if (panToFilteredPoints()) return;
+    } else {
+      if (panToFilteredPoints()) return;
+      if (await tryGeocode()) return;
     }
 
-    setFindingAddress(true);
-    try {
-      const url = `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(q)}&format=json&limit=1`;
-      const response = await fetch(url);
-      const results = await response.json();
-      if (!Array.isArray(results) || results.length === 0) {
-        setFindMessage("No matching point or address found.");
-        return;
-      }
-      const lat = Number(results[0].lat);
-      const lng = Number(results[0].lon);
-      setFlyToTarget({ lat, lng, zoom: 17, key: Date.now() });
-      setFollowUser(false);
-      setTab("map");
-      await loadNearbyPoints({ lat, lng });
-      setFindMessage(`Found: ${results[0].display_name}`);
-    } catch (err) {
-      console.error(err);
-      setFindMessage("Address lookup failed. Try again.");
-    } finally {
-      setFindingAddress(false);
-    }
+    setFindMessage("No matching point or address found.");
   };
 
   const loadNearbyPoints = async (locationOverride = null) => {
