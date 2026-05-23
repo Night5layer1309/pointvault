@@ -864,7 +864,7 @@ export default function SurveyPointAppPrototype() {
         const url = `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(q)}&format=json&limit=1`;
         const response = await fetch(url);
         if (!response.ok) {
-          console.error("Geocode HTTP", response.status);
+          setFindMessage(`Address lookup failed: HTTP ${response.status}`);
           return false;
         }
         const results = await response.json();
@@ -872,12 +872,18 @@ export default function SurveyPointAppPrototype() {
         const lat = Number(results[0].lat);
         const lng = Number(results[0].lon);
         if (!Number.isFinite(lat) || !Number.isFinite(lng)) return false;
+
+        setQuery("");
         setFlyToTarget({ lat, lng, zoom: 17, key: Date.now() });
         setFollowUser(false);
         setTab("map");
-        await loadNearbyPoints({ lat, lng });
-        setQuery("");
         setFindMessage(`Found: ${results[0].display_name}`);
+
+        try {
+          await loadNearbyPoints({ lat, lng });
+        } catch (loadErr) {
+          console.error("loadNearbyPoints error:", loadErr);
+        }
         return true;
       } catch (err) {
         console.error("Geocode error:", err);
