@@ -211,24 +211,29 @@ function ParcelOverlay() {
 const BASEMAPS = {
   aerial: [
     {
-      url: "https://basemap.nationalmap.gov/arcgis/rest/services/USGSImageryOnly/MapServer/tile/{z}/{y}/{x}",
-      attribution: "Imagery &copy; U.S. Geological Survey",
-      maxZoom: 19,
+      url: "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}",
+      attribution: "Tiles &copy; Esri, Maxar, Earthstar Geographics",
     },
   ],
   hybrid: [
     {
+      url: "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}",
+      attribution: "Tiles &copy; Esri, Maxar, Earthstar Geographics",
+    },
+    {
+      url: "https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}",
+      attribution: "",
+    },
+    {
+      url: "https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Transportation/MapServer/tile/{z}/{y}/{x}",
+      attribution: "",
+    },
+  ],
+  usgs: [
+    {
       url: "https://basemap.nationalmap.gov/arcgis/rest/services/USGSImageryOnly/MapServer/tile/{z}/{y}/{x}",
       attribution: "Imagery &copy; U.S. Geological Survey",
       maxZoom: 19,
-    },
-    {
-      url: "https://services.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}",
-      attribution: "",
-    },
-    {
-      url: "https://services.arcgisonline.com/ArcGIS/rest/services/Reference/World_Transportation/MapServer/tile/{z}/{y}/{x}",
-      attribution: "",
     },
   ],
   streets: [
@@ -277,7 +282,20 @@ function MapCenterTracker({ onCenterChange }) {
   return null;
 }
 
-function GisMap({ points, selectedPoint, userLocation, followUser, onUserPan, onMapCenterChange, onSelectPoint, basemap, showParcels }) {
+function MapFlyToTarget({ target }) {
+  const map = useMap();
+  useEffect(() => {
+    if (!target) return;
+    if (target.bounds) {
+      map.fitBounds(target.bounds, { padding: [40, 40], maxZoom: target.maxZoom || 17 });
+    } else {
+      map.setView([target.lat, target.lng], target.zoom || 17, { animate: true });
+    }
+  }, [target, map]);
+  return null;
+}
+
+function GisMap({ points, selectedPoint, userLocation, followUser, onUserPan, onMapCenterChange, flyToTarget, onSelectPoint, basemap, showParcels }) {
   const fallbackCenter = [30.7, -86.1];
   const center = userLocation ? [userLocation.lat, userLocation.lng] : fallbackCenter;
   const selectedBasemap = BASEMAPS[basemap] || BASEMAPS.aerial;
@@ -294,6 +312,7 @@ function GisMap({ points, selectedPoint, userLocation, followUser, onUserPan, on
           })}
           <MapInteractionCapture onUserInteract={onUserPan} />
           <MapCenterTracker onCenterChange={onMapCenterChange} />
+          <MapFlyToTarget target={flyToTarget} />
           {showParcels && <ParcelOverlay />}
           {followUser && userLocation && <RecenterMap center={[userLocation.lat, userLocation.lng]} zoom={16} />}
           {userLocation && (
@@ -726,6 +745,9 @@ export default function SurveyPointAppPrototype() {
   const [resultLimit, setResultLimit] = useState(500);
   const [loadingPoints, setLoadingPoints] = useState(false);
   const [mapCenter, setMapCenter] = useState(null);
+  const [flyToTarget, setFlyToTarget] = useState(null);
+  const [findingAddress, setFindingAddress] = useState(false);
+  const [findMessage, setFindMessage] = useState("");
   const [pointLoadMessage, setPointLoadMessage] = useState("Tap You Are Here to load nearby company points.");
   const [selectedPointId, setSelectedPointId] = useState(null);
   const [tab, setTab] = useState("map");
@@ -809,6 +831,56 @@ export default function SurveyPointAppPrototype() {
   }, [pointsWithDistance, query, status, maxDistanceFeet, userLocation]);
 
   const selectedPoint = pointsWithDistance.find((point) => pointKey(point) === selectedPointId) || filteredPoints[0] || null;
+
+  const findOrGeocode = async () => {
+    const q = query.trim();
+    if (!q) return;
+
+    setFindMessage("");
+
+    if (filteredPoints.length > 0) {
+      if (filteredPoints.length === 1) {
+        const p = filteredPoints[0];
+        setFlyToTarget({ lat: p.lat, lng: p.lng, zoom: 19, key: Date.now() });
+      } else {
+        const lats = filteredPoints.map((p) => p.lat).filter((n) => Number.isFinite(n));
+        const lngs = filteredPoints.map((p) => p.lng).filter((n) => Number.isFinite(n));
+        if (lats.length && lngs.length) {
+          const bounds = [
+            [Math.min(...lats), Math.min(...lngs)],
+            [Math.max(...lats), Math.max(...lngs)],
+          ];
+          setFlyToTarget({ bounds, maxZoom: 18, key: Date.now() });
+        }
+      }
+      setFollowUser(false);
+      setTab("map");
+      return;
+    }
+
+    setFindingAddress(true);
+    try {
+      const url = `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(q)}&format=json&limit=1`;
+      const response = await fetch(url);
+      const results = await response.json();
+      if (!Array.isArray(results) || results.length === 0) {
+        setFindMessage("No matching point or address found.");
+        return;
+      }
+      const lat = Number(results[0].lat);
+      const lng = Number(results[0].lon);
+      setFlyToTarget({ lat, lng, zoom: 17, key: Date.now() });
+      setFollowUser(false);
+      setTab("map");
+      await loadNearbyPoints({ lat, lng });
+      setFindMessage(`Found: ${results[0].display_name}`);
+    } catch (err) {
+      console.error(err);
+      setFindMessage("Address lookup failed. Try again.");
+    } finally {
+      setFindingAddress(false);
+    }
+  };
 
   const loadNearbyPoints = async (locationOverride = null) => {
     const location = locationOverride || mapCenter || userLocation;
@@ -1091,16 +1163,24 @@ export default function SurveyPointAppPrototype() {
 
           <Card className="rounded-3xl border-0 shadow-sm">
             <CardContent className="p-4">
-              <div className="grid gap-3 md:grid-cols-[1fr_auto_auto_auto] md:items-center">
+              <div className="grid gap-3 md:grid-cols-[1fr_auto_auto_auto_auto] md:items-center">
                 <div className="relative">
                   <Search className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
                   <input
                     value={query}
                     onChange={(event) => setQuery(event.target.value)}
-                    placeholder="Search point ID, job, county, source file..."
+                    onKeyDown={(event) => { if (event.key === "Enter") findOrGeocode(); }}
+                    placeholder="Point ID, job, source file, OR an address — press Enter to find"
                     className="w-full rounded-2xl border border-slate-200 bg-white py-3 pl-11 pr-4 text-sm outline-none focus:border-blue-400"
                   />
                 </div>
+                <Button
+                  onClick={findOrGeocode}
+                  className="rounded-2xl px-4 py-3"
+                  disabled={findingAddress || !query.trim()}
+                >
+                  <MapPin size={16} className="mr-2" /> {findingAddress ? "Finding..." : "Find"}
+                </Button>
                 <select
                   value={status}
                   onChange={(event) => setStatus(event.target.value)}
@@ -1142,6 +1222,9 @@ export default function SurveyPointAppPrototype() {
                 <div className="font-semibold">
                   Showing {filteredPoints.length.toLocaleString()} of {points.length.toLocaleString()} loaded points
                 </div>
+                {findMessage && (
+                  <div className="w-full text-xs font-semibold text-slate-700">{findMessage}</div>
+                )}
               </div>
             </CardContent>
           </Card>
@@ -1181,6 +1264,9 @@ export default function SurveyPointAppPrototype() {
                 <Button onClick={() => setBasemap("topo")} variant={basemap === "topo" ? "default" : "secondary"} className="rounded-2xl px-4 py-3">
                   <Layers size={16} className="mr-2" /> Topo
                 </Button>
+                <Button onClick={() => setBasemap("usgs")} variant={basemap === "usgs" ? "default" : "secondary"} className="rounded-2xl px-4 py-3">
+                  <Satellite size={16} className="mr-2" /> USGS Hi-Res
+                </Button>
                 <Button onClick={() => setShowParcels((value) => !value)} variant={showParcels ? "default" : "secondary"} className="rounded-2xl px-4 py-3">
                   <Filter size={16} className="mr-2" /> Parcels
                 </Button>
@@ -1217,6 +1303,7 @@ export default function SurveyPointAppPrototype() {
                 followUser={followUser}
                 onUserPan={() => { if (followUser) setFollowUser(false); }}
                 onMapCenterChange={setMapCenter}
+                flyToTarget={flyToTarget}
                 onSelectPoint={selectPoint}
                 basemap={basemap}
                 showParcels={showParcels}
