@@ -4,6 +4,7 @@ import {
   CheckCircle2,
   Clock,
   Database,
+  Download,
   Filter,
   Layers,
   List,
@@ -869,11 +870,35 @@ export default function SurveyPointAppPrototype() {
   const [tab, setTab] = useState("map");
   const [userLocation, setUserLocation] = useState(null);
   const [followUser, setFollowUser] = useState(true);
+  const [installPrompt, setInstallPrompt] = useState(null);
 
   const [locationMessage, setLocationMessage] = useState("Tap You Are Here to use phone GPS.");
   const [gpsWatchId, setGpsWatchId] = useState(null);
   const [basemap, setBasemap] = useState(() => loadInitialPrefs().basemap);
   const [showParcels, setShowParcels] = useState(false);
+
+  useEffect(() => {
+    const handler = (event) => {
+      event.preventDefault();
+      setInstallPrompt(event);
+    };
+    const installedHandler = () => setInstallPrompt(null);
+    window.addEventListener("beforeinstallprompt", handler);
+    window.addEventListener("appinstalled", installedHandler);
+    return () => {
+      window.removeEventListener("beforeinstallprompt", handler);
+      window.removeEventListener("appinstalled", installedHandler);
+    };
+  }, []);
+
+  const triggerInstall = async () => {
+    if (!installPrompt) return;
+    installPrompt.prompt();
+    try {
+      await installPrompt.userChoice;
+    } catch (err) { void err; }
+    setInstallPrompt(null);
+  };
 
   useEffect(() => {
     if (typeof document === "undefined") return;
@@ -1318,6 +1343,11 @@ export default function SurveyPointAppPrototype() {
             {canDeletePoints && (
               <Button onClick={cleanupDuplicateCompanyPoints} variant="secondary" className="rounded-2xl px-4 py-3">
                 <XCircle size={16} className="mr-2" /> Cleanup Duplicates
+              </Button>
+            )}
+            {installPrompt && (
+              <Button onClick={triggerInstall} variant="secondary" className="rounded-2xl px-4 py-3">
+                <Download size={16} className="mr-2" /> Install App
               </Button>
             )}
             <Button onClick={signOut} variant="secondary" className="rounded-2xl px-4 py-3">
