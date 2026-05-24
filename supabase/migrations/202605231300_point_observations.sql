@@ -57,9 +57,9 @@ begin
     raise exception 'Observation body is limited to 4000 characters.';
   end if;
 
-  select company_id into cp_company_id
-  from public.company_points
-  where id = target_company_point_id;
+  select cp.company_id into cp_company_id
+  from public.company_points cp
+  where cp.id = target_company_point_id;
 
   if cp_company_id is null then
     raise exception 'Point not found.';
@@ -69,7 +69,7 @@ begin
     raise exception 'You are not a member of the company that owns this point.';
   end if;
 
-  insert into public.point_observations (
+  insert into public.point_observations as po (
     company_point_id, company_id, user_id, status, body
   ) values (
     target_company_point_id,
@@ -78,12 +78,12 @@ begin
     observation_status,
     coalesce(observation_body, '')
   )
-  returning id into new_obs_id;
+  returning po.id into new_obs_id;
 
-  update public.company_points
+  update public.company_points cp
   set status = observation_status,
       updated_at = now()
-  where id = target_company_point_id;
+  where cp.id = target_company_point_id;
 
   return new_obs_id;
 end;
