@@ -1675,8 +1675,16 @@ export default function SurveyPointAppPrototype() {
             </CardContent>
           </Card>
 
+          {/* Mobile: backdrop when nav is open */}
+          {mobileNavOpen && (
+            <div
+              className="fixed inset-0 z-20 bg-black/50 md:hidden"
+              onClick={() => setMobileNavOpen(false)}
+            />
+          )}
+
           {/* Mobile: page dropdown */}
-          <Card className="rounded-3xl border-0 shadow-sm md:hidden">
+          <Card className="relative z-30 rounded-3xl border-0 shadow-sm md:hidden">
             <CardContent className="p-3">
               <button
                 onClick={() => setMobileNavOpen((v) => !v)}
@@ -1696,7 +1704,7 @@ export default function SurveyPointAppPrototype() {
                 <ChevronDown size={18} className={mobileNavOpen ? "rotate-180 transition" : "transition"} />
               </button>
               {mobileNavOpen && (
-                <div className="mt-2 grid gap-1 rounded-2xl bg-slate-50 p-2">
+                <div className="mt-2 grid gap-1 rounded-2xl bg-slate-100 p-2 dark:bg-slate-900">
                   {[
                     { id: "map", label: "Map", icon: Map },
                     { id: "list", label: "List", icon: List },
@@ -1710,18 +1718,20 @@ export default function SurveyPointAppPrototype() {
                   ].map((option) => {
                     const Icon = option.icon;
                     const active = tab === option.id;
+                    let cls;
+                    if (active) {
+                      cls = "bg-blue-600 text-white dark:bg-blue-500";
+                    } else if (option.disabled) {
+                      cls = "cursor-not-allowed bg-slate-200 text-slate-400 dark:bg-slate-800 dark:text-slate-600";
+                    } else {
+                      cls = "bg-white text-slate-900 hover:bg-blue-50 dark:bg-slate-700 dark:text-white dark:hover:bg-slate-600";
+                    }
                     return (
                       <button
                         key={option.id}
                         disabled={option.disabled}
                         onClick={() => { setTab(option.id); setMobileNavOpen(false); }}
-                        className={`flex items-center gap-2 rounded-xl px-3 py-3 text-left text-sm font-semibold ${
-                          active
-                            ? "bg-slate-950 text-white"
-                            : option.disabled
-                              ? "text-slate-400"
-                              : "bg-white text-slate-800 hover:bg-slate-100"
-                        }`}
+                        className={`flex items-center gap-2 rounded-xl px-3 py-3 text-left text-sm font-semibold ${cls}`}
                       >
                         <Icon size={16} /> {option.label}
                       </button>
