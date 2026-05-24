@@ -41,6 +41,7 @@ language plpgsql
 security definer
 set search_path to 'public'
 as $$
+#variable_conflict use_column
 declare
   cp_company_id uuid;
   new_obs_id uuid;
@@ -104,6 +105,7 @@ security definer
 stable
 set search_path to 'public'
 as $$
+#variable_conflict use_column
 declare
   cp_company_id uuid;
 begin
