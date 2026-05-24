@@ -1604,7 +1604,7 @@ export default function SurveyPointAppPrototype() {
         </div>
       )}
 
-      <main className="mx-auto grid max-w-7xl gap-4 px-4 py-4 lg:grid-cols-[1fr_380px]">
+      <main className={`mx-auto grid max-w-7xl gap-4 px-4 py-4 ${tab === "map" ? "lg:grid-cols-[1fr_380px]" : ""}`}>
         <section className="space-y-4">
           <Card className="hidden rounded-3xl border-0 shadow-sm md:block">
             <CardContent className="p-4">
@@ -1692,13 +1692,9 @@ export default function SurveyPointAppPrototype() {
               >
                 <span className="flex items-center gap-2">
                   {tab === "map" && <><Map size={16} /> Map</>}
-                  {tab === "list" && <><List size={16} /> List</>}
-                  {tab === "detail" && <><Target size={16} /> Detail</>}
-                  {tab === "add" && <><Plus size={16} /> Add Local</>}
-                  {tab === "import" && <><Upload size={16} /> Data Import</>}
-                  {tab === "billing" && <><CreditCard size={16} /> Billing</>}
-                  {tab === "team" && <><Users size={16} /> Team</>}
-                  {tab === "invite" && <><Send size={16} /> Invite</>}
+                  {tab === "points" && <><List size={16} /> Points</>}
+                  {tab === "import" && <><Upload size={16} /> Add &amp; Import</>}
+                  {tab === "team" && <><Users size={16} /> Team &amp; Billing</>}
                   {tab === "settings" && <><SettingsIcon size={16} /> Settings</>}
                 </span>
                 <ChevronDown size={18} className={mobileNavOpen ? "rotate-180 transition" : "transition"} />
@@ -1707,13 +1703,9 @@ export default function SurveyPointAppPrototype() {
                 <div className="mt-2 grid gap-1 rounded-2xl bg-slate-100 p-2 dark:bg-slate-900">
                   {[
                     { id: "map", label: "Map", icon: Map },
-                    { id: "list", label: "List", icon: List },
-                    { id: "detail", label: "Detail", icon: Target, disabled: !selectedPoint },
-                    { id: "add", label: "Add Local", icon: Plus },
-                    { id: "import", label: "Data Import", icon: Upload },
-                    { id: "billing", label: "Billing", icon: CreditCard },
-                    { id: "team", label: "Team", icon: Users },
-                    { id: "invite", label: "Invite", icon: Send },
+                    { id: "points", label: "Points (list + detail)", icon: List },
+                    { id: "import", label: "Add & Import", icon: Upload },
+                    { id: "team", label: "Team & Billing", icon: Users },
                     { id: "settings", label: "Settings", icon: SettingsIcon },
                   ].map((option) => {
                     const Icon = option.icon;
@@ -1748,26 +1740,14 @@ export default function SurveyPointAppPrototype() {
               <Button onClick={() => setTab("map")} variant={tab === "map" ? "default" : "secondary"} className="rounded-2xl px-4 py-3">
                 <Map size={16} className="mr-2" /> Map
               </Button>
-              <Button onClick={() => setTab("list")} variant={tab === "list" ? "default" : "secondary"} className="rounded-2xl px-4 py-3">
-                <List size={16} className="mr-2" /> List
-              </Button>
-              <Button onClick={() => setTab("detail")} variant={tab === "detail" ? "default" : "secondary"} className="rounded-2xl px-4 py-3" disabled={!selectedPoint}>
-                <Target size={16} className="mr-2" /> Detail
-              </Button>
-              <Button onClick={() => setTab("add")} variant={tab === "add" ? "default" : "secondary"} className="rounded-2xl px-4 py-3">
-                <Plus size={16} className="mr-2" /> Add Local
+              <Button onClick={() => setTab("points")} variant={tab === "points" ? "default" : "secondary"} className="rounded-2xl px-4 py-3">
+                <List size={16} className="mr-2" /> Points
               </Button>
               <Button onClick={() => setTab("import")} variant={tab === "import" ? "default" : "secondary"} className="rounded-2xl px-4 py-3">
-                <Upload size={16} className="mr-2" /> Data Import
-              </Button>
-              <Button onClick={() => setTab("billing")} variant={tab === "billing" ? "default" : "secondary"} className="rounded-2xl px-4 py-3">
-                <CreditCard size={16} className="mr-2" /> Billing
+                <Upload size={16} className="mr-2" /> Add &amp; Import
               </Button>
               <Button onClick={() => setTab("team")} variant={tab === "team" ? "default" : "secondary"} className="rounded-2xl px-4 py-3">
-                <Users size={16} className="mr-2" /> Team
-              </Button>
-              <Button onClick={() => setTab("invite")} variant={tab === "invite" ? "default" : "secondary"} className="rounded-2xl px-4 py-3">
-                <Send size={16} className="mr-2" /> Invite
+                <Users size={16} className="mr-2" /> Team &amp; Billing
               </Button>
               <Button onClick={() => setTab("settings")} variant={tab === "settings" ? "default" : "secondary"} className="rounded-2xl px-4 py-3">
                 <SettingsIcon size={16} className="mr-2" /> Settings
@@ -1876,18 +1856,9 @@ export default function SurveyPointAppPrototype() {
             </div>
           )}
 
-          {tab === "list" && (
-            <div className="grid gap-3 md:grid-cols-2">
-              {filteredPoints.length === 0 && <EmptyPointState pointLoadMessage={pointLoadMessage} />}
-              {filteredPoints.map((point) => (
-                <PointCard key={`${pointKey(point)}-card`} point={point} selected={pointKey(selectedPoint) === pointKey(point)} onClick={selectPoint} />
-              ))}
-            </div>
-          )}
-
-          {tab === "detail" && (
-            <div>
-              {selectedPoint ? (
+          {tab === "points" && (
+            <div className="space-y-4">
+              {selectedPoint && (
                 <PointDetail
                   point={selectedPoint}
                   company={activeCompany}
@@ -1895,34 +1866,40 @@ export default function SurveyPointAppPrototype() {
                   onDeletePoint={deleteCompanyPoint}
                   canDeletePoints={canDeletePoints}
                 />
-              ) : (
-                <EmptyPointState pointLoadMessage={pointLoadMessage} />
               )}
+              <div>
+                <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">
+                  {filteredPoints.length.toLocaleString()} of {points.length.toLocaleString()} loaded points
+                </div>
+                <div className="grid gap-3 md:grid-cols-2">
+                  {filteredPoints.length === 0 && <EmptyPointState pointLoadMessage={pointLoadMessage} />}
+                  {filteredPoints.map((point) => (
+                    <PointCard key={`${pointKey(point)}-card`} point={point} selected={pointKey(selectedPoint) === pointKey(point)} onClick={selectPoint} />
+                  ))}
+                </div>
+              </div>
             </div>
           )}
 
-          {tab === "add" && <AddPointForm onAddPoint={addPoint} userLocation={userLocation} />}
-
           {tab === "import" && (
-            <DataImportPanel
-              company={activeCompany}
-              membership={activeMembership}
-              onImportPromoted={() => loadNearbyPoints()}
-              defaultEpsg={defaultCoordEpsg}
-              defaultCoordinateSystem={defaultCoordName}
-            />
-          )}
-
-          {tab === "billing" && (
-            <BillingPanel company={activeCompany} canAdmin={canDeletePoints} />
+            <div className="space-y-4">
+              <AddPointForm onAddPoint={addPoint} userLocation={userLocation} />
+              <DataImportPanel
+                company={activeCompany}
+                membership={activeMembership}
+                onImportPromoted={() => loadNearbyPoints()}
+                defaultEpsg={defaultCoordEpsg}
+                defaultCoordinateSystem={defaultCoordName}
+              />
+            </div>
           )}
 
           {tab === "team" && (
-            <TeamPanel company={activeCompany} membership={activeMembership} />
-          )}
-
-          {tab === "invite" && (
-            <InvitePanel company={activeCompany} membership={activeMembership} />
+            <div className="space-y-4">
+              <BillingPanel company={activeCompany} canAdmin={canDeletePoints} />
+              <TeamPanel company={activeCompany} membership={activeMembership} />
+              <InvitePanel company={activeCompany} membership={activeMembership} />
+            </div>
           )}
 
           {tab === "settings" && (
@@ -1940,6 +1917,7 @@ export default function SurveyPointAppPrototype() {
           )}
         </section>
 
+        {tab === "map" && (
         <aside className="space-y-4">
           <Card className="rounded-3xl border-0 shadow-xl">
             <CardContent className="p-5">
@@ -1979,6 +1957,7 @@ export default function SurveyPointAppPrototype() {
             <EmptyPointState pointLoadMessage={pointLoadMessage} />
           )}
         </aside>
+        )}
       </main>
     </div>
   );
