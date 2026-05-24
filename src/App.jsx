@@ -22,6 +22,7 @@ import {
   Settings as SettingsIcon,
   Target,
   Upload,
+  Users,
   WifiOff,
   X,
   XCircle,
@@ -962,6 +963,7 @@ export default function SurveyPointAppPrototype() {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
   const [mobileSearchOpen, setMobileSearchOpen] = useState(false);
+  const [layersOpen, setLayersOpen] = useState(false);
 
   const [locationMessage, setLocationMessage] = useState("Tap You Are Here to use phone GPS.");
   const [gpsWatchId, setGpsWatchId] = useState(null);
@@ -1570,25 +1572,9 @@ export default function SurveyPointAppPrototype() {
               </button>
             </div>
             <div className="mt-4 grid gap-2">
-              <Button onClick={() => { locateUser(); setMobileMenuOpen(false); }} className="w-full rounded-2xl py-3">
-                <LocateFixed size={16} className="mr-2" /> You Are Here
-              </Button>
-              <Button onClick={() => { startGpsWatch(); setMobileMenuOpen(false); }} variant="secondary" className="w-full rounded-2xl py-3">
+              <Button onClick={() => { startGpsWatch(); setMobileMenuOpen(false); }} className="w-full rounded-2xl py-3">
                 <RefreshCw size={16} className="mr-2" /> {gpsWatchId ? "Stop GPS" : "Track GPS"}
               </Button>
-              <Button
-                onClick={() => { loadNearbyPoints(); setMobileMenuOpen(false); }}
-                variant="secondary"
-                className="w-full rounded-2xl py-3"
-                disabled={loadingPoints || (!userLocation && !mapCenter)}
-              >
-                <Database size={16} className="mr-2" /> {loadingPoints ? "Loading..." : "Load Points"}
-              </Button>
-              {canDeletePoints && (
-                <Button onClick={() => { cleanupDuplicateCompanyPoints(); setMobileMenuOpen(false); }} variant="secondary" className="w-full rounded-2xl py-3">
-                  <XCircle size={16} className="mr-2" /> Cleanup Duplicates
-                </Button>
-              )}
               {installPrompt && (
                 <Button onClick={() => { triggerInstall(); setMobileMenuOpen(false); }} variant="secondary" className="w-full rounded-2xl py-3">
                   <Download size={16} className="mr-2" /> Install App
@@ -1605,8 +1591,6 @@ export default function SurveyPointAppPrototype() {
 
       <main className="mx-auto grid max-w-7xl gap-4 px-4 py-4 lg:grid-cols-[1fr_380px]">
         <section className="space-y-4">
-          <CompanyAdminPanel company={activeCompany} membership={activeMembership} />
-
           <Card className="hidden rounded-3xl border-0 shadow-sm md:block">
             <CardContent className="p-4">
               <div className="grid gap-3 md:grid-cols-[1fr_auto_auto_auto_auto] md:items-center">
@@ -1689,6 +1673,7 @@ export default function SurveyPointAppPrototype() {
                   {tab === "detail" && <><Target size={16} /> Detail</>}
                   {tab === "add" && <><Plus size={16} /> Add Local</>}
                   {tab === "import" && <><Upload size={16} /> Data Import</>}
+                  {tab === "manage" && <><Users size={16} /> Manage</>}
                   {tab === "settings" && <><SettingsIcon size={16} /> Settings</>}
                 </span>
                 <ChevronDown size={18} className={mobileNavOpen ? "rotate-180 transition" : "transition"} />
@@ -1701,6 +1686,7 @@ export default function SurveyPointAppPrototype() {
                     { id: "detail", label: "Detail", icon: Target, disabled: !selectedPoint },
                     { id: "add", label: "Add Local", icon: Plus },
                     { id: "import", label: "Data Import", icon: Upload },
+                    { id: "manage", label: "Manage (Team & Billing)", icon: Users },
                     { id: "settings", label: "Settings", icon: SettingsIcon },
                   ].map((option) => {
                     const Icon = option.icon;
@@ -1745,6 +1731,9 @@ export default function SurveyPointAppPrototype() {
               <Button onClick={() => setTab("import")} variant={tab === "import" ? "default" : "secondary"} className="rounded-2xl px-4 py-3">
                 <Upload size={16} className="mr-2" /> Data Import
               </Button>
+              <Button onClick={() => setTab("manage")} variant={tab === "manage" ? "default" : "secondary"} className="rounded-2xl px-4 py-3">
+                <Users size={16} className="mr-2" /> Manage
+              </Button>
               <Button onClick={() => setTab("settings")} variant={tab === "settings" ? "default" : "secondary"} className="rounded-2xl px-4 py-3">
                 <SettingsIcon size={16} className="mr-2" /> Settings
               </Button>
@@ -1753,43 +1742,10 @@ export default function SurveyPointAppPrototype() {
 
           {tab === "map" && (
             <div className="space-y-3">
-              <div className="flex flex-wrap gap-2">
-                <Button onClick={() => setBasemap("aerial")} variant={basemap === "aerial" ? "default" : "secondary"} className="rounded-2xl px-4 py-3">
-                  <Satellite size={16} className="mr-2" /> Aerial
+              <div className="flex flex-wrap items-center gap-2">
+                <Button onClick={locateUser} className="rounded-2xl px-4 py-3">
+                  <LocateFixed size={16} className="mr-2" /> You Are Here
                 </Button>
-                <Button onClick={() => setBasemap("hybrid")} variant={basemap === "hybrid" ? "default" : "secondary"} className="rounded-2xl px-4 py-3">
-                  <Layers size={16} className="mr-2" /> Hybrid
-                </Button>
-                <Button onClick={() => setBasemap("streets")} variant={basemap === "streets" ? "default" : "secondary"} className="rounded-2xl px-4 py-3">
-                  <Map size={16} className="mr-2" /> Streets
-                </Button>
-                <Button onClick={() => setBasemap("topo")} variant={basemap === "topo" ? "default" : "secondary"} className="rounded-2xl px-4 py-3">
-                  <Layers size={16} className="mr-2" /> Topo
-                </Button>
-                <Button onClick={() => setBasemap("usgs")} variant={basemap === "usgs" ? "default" : "secondary"} className="rounded-2xl px-4 py-3">
-                  <Satellite size={16} className="mr-2" /> USGS Hi-Res
-                </Button>
-                <Button onClick={() => setShowParcels((value) => !value)} variant={showParcels ? "default" : "secondary"} className="rounded-2xl px-4 py-3">
-                  <Filter size={16} className="mr-2" /> Parcels
-                </Button>
-                <Button
-                  onClick={() => setFollowUser((value) => !value)}
-                  variant={followUser ? "default" : "secondary"}
-                  className="rounded-2xl px-4 py-3"
-                  disabled={!userLocation}
-                  title={userLocation ? "" : "No GPS location available"}
-                >
-                  <LocateFixed size={16} className="mr-2" /> Follow GPS {followUser ? "on" : "off"}
-                </Button>
-                {!followUser && userLocation && (
-                  <Button
-                    onClick={() => setFollowUser(true)}
-                    variant="secondary"
-                    className="rounded-2xl px-4 py-3"
-                  >
-                    <Target size={16} className="mr-2" /> Recenter
-                  </Button>
-                )}
                 <Button
                   onClick={() => loadNearbyPoints(mapCenter)}
                   className="rounded-2xl px-4 py-3"
@@ -1797,6 +1753,82 @@ export default function SurveyPointAppPrototype() {
                 >
                   <Search size={16} className="mr-2" /> Search This Area
                 </Button>
+                <div className="relative">
+                  <Button
+                    onClick={() => setLayersOpen((v) => !v)}
+                    variant="secondary"
+                    className="rounded-2xl px-4 py-3"
+                  >
+                    <Layers size={16} className="mr-2" /> Layers
+                    <ChevronDown size={14} className={`ml-2 ${layersOpen ? "rotate-180" : ""} transition`} />
+                  </Button>
+                  {layersOpen && (
+                    <>
+                      <div className="fixed inset-0 z-30" onClick={() => setLayersOpen(false)} />
+                      <div className="absolute left-0 top-full z-40 mt-2 w-64 rounded-2xl border border-slate-200 bg-white p-3 shadow-xl">
+                        <div className="mb-2 text-xs font-bold uppercase tracking-wide text-slate-500">Basemap</div>
+                        <div className="grid gap-1">
+                          {[
+                            { id: "aerial", label: "Aerial", icon: Satellite },
+                            { id: "hybrid", label: "Hybrid", icon: Layers },
+                            { id: "streets", label: "Streets", icon: Map },
+                            { id: "topo", label: "Topo", icon: Layers },
+                            { id: "usgs", label: "USGS Hi-Res", icon: Satellite },
+                          ].map((option) => {
+                            const Icon = option.icon;
+                            const active = basemap === option.id;
+                            return (
+                              <button
+                                key={option.id}
+                                onClick={() => { setBasemap(option.id); setLayersOpen(false); }}
+                                className={`flex items-center gap-2 rounded-xl px-3 py-2 text-left text-sm font-semibold ${
+                                  active ? "bg-slate-950 text-white" : "bg-slate-50 text-slate-800 hover:bg-slate-100"
+                                }`}
+                              >
+                                <Icon size={14} /> {option.label}
+                              </button>
+                            );
+                          })}
+                        </div>
+                        <div className="mt-3 h-px bg-slate-200" />
+                        <div className="mt-3 mb-2 text-xs font-bold uppercase tracking-wide text-slate-500">Overlays</div>
+                        <button
+                          onClick={() => setShowParcels((v) => !v)}
+                          className={`flex w-full items-center justify-between rounded-xl px-3 py-2 text-left text-sm font-semibold ${
+                            showParcels ? "bg-slate-950 text-white" : "bg-slate-50 text-slate-800 hover:bg-slate-100"
+                          }`}
+                        >
+                          <span className="flex items-center gap-2"><Filter size={14} /> Florida Parcels</span>
+                          <span className="text-xs">{showParcels ? "on" : "off"}</span>
+                        </button>
+                        <div className="mt-3 h-px bg-slate-200" />
+                        <div className="mt-3 mb-2 text-xs font-bold uppercase tracking-wide text-slate-500">GPS</div>
+                        <button
+                          onClick={() => setFollowUser((v) => !v)}
+                          disabled={!userLocation}
+                          className={`flex w-full items-center justify-between rounded-xl px-3 py-2 text-left text-sm font-semibold ${
+                            !userLocation
+                              ? "cursor-not-allowed bg-slate-100 text-slate-400"
+                              : followUser
+                                ? "bg-slate-950 text-white"
+                                : "bg-slate-50 text-slate-800 hover:bg-slate-100"
+                          }`}
+                        >
+                          <span className="flex items-center gap-2"><LocateFixed size={14} /> Follow GPS</span>
+                          <span className="text-xs">{followUser ? "on" : "off"}</span>
+                        </button>
+                        {!followUser && userLocation && (
+                          <button
+                            onClick={() => { setFollowUser(true); setLayersOpen(false); }}
+                            className="mt-2 flex w-full items-center gap-2 rounded-xl bg-slate-50 px-3 py-2 text-left text-sm font-semibold text-slate-800 hover:bg-slate-100"
+                          >
+                            <Target size={14} /> Recenter on GPS
+                          </button>
+                        )}
+                      </div>
+                    </>
+                  )}
+                </div>
               </div>
               <GisMap
                 points={filteredPoints}
@@ -1848,6 +1880,36 @@ export default function SurveyPointAppPrototype() {
               defaultEpsg={defaultCoordEpsg}
               defaultCoordinateSystem={defaultCoordName}
             />
+          )}
+
+          {tab === "manage" && (
+            <div className="space-y-4">
+              <CompanyAdminPanel company={activeCompany} membership={activeMembership} />
+              <Card className="rounded-3xl border-0 shadow-sm">
+                <CardContent className="p-4">
+                  <div className="mb-2 font-bold text-slate-950">Quick actions</div>
+                  <div className="grid gap-2 md:grid-cols-2">
+                    <Button
+                      onClick={() => loadNearbyPoints()}
+                      variant="secondary"
+                      className="rounded-2xl py-3"
+                      disabled={loadingPoints || (!userLocation && !mapCenter)}
+                    >
+                      <Database size={16} className="mr-2" /> {loadingPoints ? "Loading..." : "Reload Company Points"}
+                    </Button>
+                    {canDeletePoints && (
+                      <Button
+                        onClick={cleanupDuplicateCompanyPoints}
+                        variant="secondary"
+                        className="rounded-2xl py-3"
+                      >
+                        <XCircle size={16} className="mr-2" /> Cleanup Duplicate Points
+                      </Button>
+                    )}
+                  </div>
+                </CardContent>
+              </Card>
+            </div>
           )}
 
           {tab === "settings" && (
