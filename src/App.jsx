@@ -191,12 +191,42 @@ function formatDistance(feet) {
   return `${(numericFeet / 5280).toFixed(2)} mi`;
 }
 
-function pointIcon(status, selected = false) {
+// Maps a point's access_level + visibility to a ring color, so users can tell
+// at a glance whose point this is and how trusted the source is.
+//   white  = your own point, still private
+//   #22c55e (green)  = your own point, shared to community
+//   #06b6d4 (cyan)   = someone else's community point, full trust
+//                      (your company is at contributor/balanced tier)
+//   #f59e0b (amber)  = someone else's community point, limited info
+//                      (your company is at low_contribution tier)
+//   #94a3b8 (slate)  = someone else's community point, location only
+//                      (your company is at viewing_only tier)
+function ringColorForPoint(point) {
+  const isOwn = !point?.access_level || point.access_level === "full";
+  if (isOwn) {
+    return point?.visibility === "community" ? "#22c55e" : "#ffffff";
+  }
+  switch (point?.access_level) {
+    case "contributor":
+    case "balanced":
+      return "#06b6d4";
+    case "low_contribution":
+      return "#f59e0b";
+    case "viewing_only":
+      return "#94a3b8";
+    default:
+      return "#ffffff";
+  }
+}
+
+function pointIcon(status, options = {}) {
+  const { selected = false, point = null } = options;
   const color = (statusMeta[status] || statusMeta.record).color;
   const size = selected ? 22 : 16;
+  const ring = ringColorForPoint(point);
   return L.divIcon({
     className: "pointvault-marker",
-    html: `<div style="width:${size}px;height:${size}px;background:${color};border:3px solid white;border-radius:999px;box-shadow:0 3px 10px rgba(15,23,42,.35);"></div>`,
+    html: `<div style="width:${size}px;height:${size}px;background:${color};border:3px solid ${ring};border-radius:999px;box-shadow:0 3px 10px rgba(15,23,42,.35);"></div>`,
     iconSize: [size, size],
     iconAnchor: [size / 2, size / 2],
   });
@@ -338,7 +368,7 @@ function ClusteredPoints({ points, selectedPoint, onSelectPoint, onClusterZoom }
       if (!point.lat || !point.lng) return;
       const selected = selectedKey === pointKey(point);
       const marker = L.marker([Number(point.lat), Number(point.lng)], {
-        icon: pointIcon(point.status, selected),
+        icon: pointIcon(point.status, { selected, point }),
       });
       marker.on("click", () => onSelectPoint(point));
       const popupHtml = `
@@ -1920,6 +1950,38 @@ export default function SurveyPointAppPrototype() {
                 basemap={basemap}
                 showParcels={showParcels}
               />
+
+              <Card className="rounded-2xl border-0 shadow-sm">
+                <CardContent className="p-3 text-xs">
+                  <div className="mb-2 font-bold uppercase tracking-wide text-slate-500">Point colors — fill = status, ring = source</div>
+                  <div className="grid gap-1 md:grid-cols-2">
+                    <div className="flex items-center gap-2">
+                      <span className="inline-block h-3 w-3 rounded-full bg-emerald-500 ring-2 ring-white ring-offset-1 ring-offset-slate-300 dark:ring-offset-slate-700" />
+                      <span>Found / suspect / destroyed status (fill)</span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <span className="inline-block h-3 w-3 rounded-full bg-slate-500" style={{ outline: "3px solid #ffffff", outlineOffset: -1 }} />
+                      <span><strong className="text-slate-700 dark:text-slate-200">white ring</strong> — your own private point</span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <span className="inline-block h-3 w-3 rounded-full bg-slate-500" style={{ outline: "3px solid #22c55e", outlineOffset: -1 }} />
+                      <span><strong className="text-emerald-700 dark:text-emerald-400">green ring</strong> — your own point, shared to community</span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <span className="inline-block h-3 w-3 rounded-full bg-slate-500" style={{ outline: "3px solid #06b6d4", outlineOffset: -1 }} />
+                      <span><strong className="text-cyan-700 dark:text-cyan-400">cyan ring</strong> — community point, full data (you're at contributor/balanced tier)</span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <span className="inline-block h-3 w-3 rounded-full bg-slate-500" style={{ outline: "3px solid #f59e0b", outlineOffset: -1 }} />
+                      <span><strong className="text-amber-700 dark:text-amber-400">amber ring</strong> — community point, limited info (low-contribution tier)</span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <span className="inline-block h-3 w-3 rounded-full bg-slate-500" style={{ outline: "3px solid #94a3b8", outlineOffset: -1 }} />
+                      <span><strong className="text-slate-600 dark:text-slate-400">slate ring</strong> — community point, location only (viewing-only tier)</span>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
             </div>
           )}
 
