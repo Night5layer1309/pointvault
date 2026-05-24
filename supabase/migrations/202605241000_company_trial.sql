@@ -47,7 +47,11 @@ $$;
 
 -- Replace company_billing_snapshot to also expose trial_ends_at + has_access
 -- so the frontend can render the trial-ended gate without a second round trip.
-create or replace function public.company_billing_snapshot(target_company_id uuid)
+-- Postgres can't widen a function's return columns via CREATE OR REPLACE, so
+-- drop the old one first.
+drop function if exists public.company_billing_snapshot(uuid);
+
+create function public.company_billing_snapshot(target_company_id uuid)
 returns table (
   id uuid,
   name text,
