@@ -364,24 +364,36 @@ function ClusteredPoints({ points, selectedPoint, onSelectPoint, onClusterZoom }
       "'": "&#39;",
     })[ch]);
 
+    let added = 0;
+    let skipped = 0;
     points.forEach((point) => {
-      if (!point.lat || !point.lng) return;
-      const selected = selectedKey === pointKey(point);
-      const marker = L.marker([Number(point.lat), Number(point.lng)], {
-        icon: pointIcon(point.status, { selected, point }),
-      });
-      marker.on("click", () => onSelectPoint(point));
-      const popupHtml = `
-        <div style="font-size:12px">
-          <strong>${escapeHtml(point.id)}</strong><br/>
-          ${escapeHtml(point.description || point.name || "")}<br/>
-          <span>${escapeHtml(formatDistance(point.distanceFeet))} away</span><br/>
-          <span>${escapeHtml(point.sourceFile || point.job || "No source file")}</span>
-        </div>
-      `;
-      marker.bindPopup(popupHtml);
-      cluster.addLayer(marker);
+      try {
+        if (!point || !point.lat || !point.lng) { skipped += 1; return; }
+        const lat = Number(point.lat);
+        const lng = Number(point.lng);
+        if (!Number.isFinite(lat) || !Number.isFinite(lng)) { skipped += 1; return; }
+        const selected = selectedKey === pointKey(point);
+        const marker = L.marker([lat, lng], {
+          icon: pointIcon(point.status, { selected, point }),
+        });
+        marker.on("click", () => onSelectPoint(point));
+        const popupHtml = `
+          <div style="font-size:12px">
+            <strong>${escapeHtml(point.id)}</strong><br/>
+            ${escapeHtml(point.description || point.name || "")}<br/>
+            <span>${escapeHtml(formatDistance(point.distanceFeet))} away</span><br/>
+            <span>${escapeHtml(point.sourceFile || point.job || "No source file")}</span>
+          </div>
+        `;
+        marker.bindPopup(popupHtml);
+        cluster.addLayer(marker);
+        added += 1;
+      } catch (err) {
+        skipped += 1;
+        console.error("ClusteredPoints: failed to add marker for point", point, err);
+      }
     });
+    if (skipped > 0) console.warn(`ClusteredPoints: added ${added}, skipped ${skipped} points`);
 
     map.addLayer(cluster);
     return () => {
