@@ -156,9 +156,9 @@ export async function fetchCompanyBilling(companyId) {
 }
 
 export async function startCheckoutForCompany(companyId) {
-  const priceId = import.meta.env.VITE_STRIPE_PRICE_ID;
-  if (!priceId) {
-    throw new Error("VITE_STRIPE_PRICE_ID is not configured.");
+  const priceId = import.meta.env.VITE_STRIPE_PRICE_ID?.trim();
+  if (!priceId || !priceId.startsWith("price_")) {
+    throw new Error("VITE_STRIPE_PRICE_ID is missing or malformed.");
   }
   const { data, error } = await supabase.functions.invoke("create-checkout-session", {
     body: {
