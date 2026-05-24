@@ -1507,13 +1507,22 @@ export default function SurveyPointAppPrototype() {
         {/* Mobile slide-down search panel */}
         {mobileSearchOpen && (
           <div className="border-t border-slate-200 bg-white p-3 md:hidden">
-            <div className="grid gap-2">
+            <form
+              onSubmit={(event) => {
+                event.preventDefault();
+                if (!query.trim()) return;
+                findOrGeocode();
+                setMobileSearchOpen(false);
+              }}
+              className="grid gap-2"
+            >
               <div className="relative">
                 <Search className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
                 <input
+                  type="search"
+                  enterKeyHint="search"
                   value={query}
                   onChange={(event) => setQuery(event.target.value)}
-                  onKeyDown={(event) => { if (event.key === "Enter") { findOrGeocode(); setMobileSearchOpen(false); } }}
                   placeholder="Point ID, job, OR address — press Enter"
                   className="w-full rounded-2xl border border-slate-200 bg-white py-3 pl-11 pr-4 text-sm outline-none focus:border-blue-400"
                   autoFocus
@@ -1521,7 +1530,7 @@ export default function SurveyPointAppPrototype() {
               </div>
               <div className="grid grid-cols-3 gap-2">
                 <Button
-                  onClick={() => { findOrGeocode(); setMobileSearchOpen(false); }}
+                  type="submit"
                   disabled={findingAddress || !query.trim()}
                   className="rounded-2xl px-3 py-2 text-xs"
                 >
@@ -1552,7 +1561,7 @@ export default function SurveyPointAppPrototype() {
               {findMessage && (
                 <div className="text-xs font-semibold text-slate-700">{findMessage}</div>
               )}
-            </div>
+            </form>
           </div>
         )}
       </header>
@@ -1608,19 +1617,27 @@ export default function SurveyPointAppPrototype() {
         <section className="space-y-4">
           <Card className="hidden rounded-3xl border-0 shadow-sm md:block">
             <CardContent className="p-4">
-              <div className="grid gap-3 md:grid-cols-[1fr_auto_auto_auto_auto] md:items-center">
+              <form
+                onSubmit={(event) => {
+                  event.preventDefault();
+                  if (!query.trim()) return;
+                  findOrGeocode();
+                }}
+                className="grid gap-3 md:grid-cols-[1fr_auto_auto_auto_auto] md:items-center"
+              >
                 <div className="relative">
                   <Search className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
                   <input
+                    type="search"
+                    enterKeyHint="search"
                     value={query}
                     onChange={(event) => setQuery(event.target.value)}
-                    onKeyDown={(event) => { if (event.key === "Enter") findOrGeocode(); }}
                     placeholder="Point ID, job, source file, OR an address — press Enter to find"
                     className="w-full rounded-2xl border border-slate-200 bg-white py-3 pl-11 pr-4 text-sm outline-none focus:border-blue-400"
                   />
                 </div>
                 <Button
-                  onClick={findOrGeocode}
+                  type="submit"
                   className="rounded-2xl px-4 py-3"
                   disabled={findingAddress || !query.trim()}
                 >
@@ -1657,7 +1674,7 @@ export default function SurveyPointAppPrototype() {
                   <option value={1000}>1,000 results</option>
                   <option value={5000}>5,000 results</option>
                 </select>
-              </div>
+              </form>
 
               <div className="mt-3 flex flex-wrap items-center justify-between gap-3 text-sm text-slate-600">
                 <div className="flex flex-wrap items-center gap-2">
