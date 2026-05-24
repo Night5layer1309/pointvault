@@ -1337,12 +1337,12 @@ export default function SurveyPointAppPrototype() {
   const addPoint = (point) => {
     setPoints((current) => [point, ...current]);
     setSelectedPointId(pointKey(point));
-    setTab("detail");
+    setTab("points");
   };
 
   const selectPoint = (point) => {
     setSelectedPointId(pointKey(point));
-    setTab("detail");
+    setTab("points");
   };
 
   const deleteCompanyPoint = async (point) => {
