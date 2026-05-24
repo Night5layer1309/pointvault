@@ -3,10 +3,12 @@ import QRCode from "qrcode";
 import {
   Building2,
   CheckCircle2,
+  Clock,
   Copy,
   CreditCard,
   ExternalLink,
   Link as LinkIcon,
+  Lock,
   Mail,
   Plus,
   QrCode,
@@ -311,6 +313,55 @@ export function CompanySwitcher({ memberships, activeCompanyId, onChange }) {
     <select className="rounded-2xl border border-slate-200 bg-white px-3 py-2 text-sm" value={activeCompanyId || ""} onChange={(e) => onChange(e.target.value)}>
       {memberships.map((membership) => <option key={membership.id} value={membership.company.id}>{membership.company.name}</option>)}
     </select>
+  );
+}
+
+export function TrialEndedGate({ company, membership, billing }) {
+  const canAdmin = ["owner", "admin"].includes(membership?.role);
+  const trialEnded = billing?.trial_ends_at
+    ? new Date(billing.trial_ends_at).toLocaleDateString()
+    : "recently";
+  const dataRetentionEnd = billing?.trial_ends_at
+    ? new Date(new Date(billing.trial_ends_at).getTime() + 60 * 24 * 60 * 60 * 1000).toLocaleDateString()
+    : "at least 60 days from now";
+
+  return (
+    <div className="mx-auto flex min-h-screen max-w-2xl items-center px-4 py-10">
+      <Card className="w-full rounded-3xl border-0 shadow-xl">
+        <CardContent className="p-6">
+          <div className="text-center">
+            <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-2xl bg-slate-900 text-white">
+              <Lock size={28} />
+            </div>
+            <h1 className="mt-4 text-2xl font-black text-slate-950">Your free trial has ended</h1>
+            <p className="mt-2 text-sm leading-6 text-slate-600">
+              <strong>{company?.name}</strong>'s 7-day trial ended on <strong>{trialEnded}</strong>.
+              Map, points, observations, and imports are paused until you subscribe.
+            </p>
+            <div className="mt-3 rounded-2xl bg-emerald-50 p-3 text-xs font-semibold text-emerald-900">
+              <Clock size={14} className="mr-1 inline" />
+              Your data is safe through <strong>{dataRetentionEnd}</strong>. Subscribe before then and
+              you'll pick up exactly where you left off — no data loss.
+            </div>
+          </div>
+
+          <div className="mt-6">
+            {canAdmin ? (
+              <BillingPanel company={company} canAdmin={canAdmin} />
+            ) : (
+              <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm leading-6 text-amber-900">
+                Only the company owner or an admin can subscribe. Ask them to open PointVault and
+                click <strong>Upgrade</strong> in the Billing card.
+              </div>
+            )}
+          </div>
+
+          <Button onClick={signOut} variant="secondary" className="mt-6 w-full rounded-2xl py-3">
+            Sign Out
+          </Button>
+        </CardContent>
+      </Card>
+    </div>
   );
 }
 

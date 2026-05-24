@@ -37,11 +37,13 @@ import {
   CompanyAdminPanel,
   CompanySetupPanel,
   SignInPanel,
+  TrialEndedGate,
 } from "@/components/CompanyAccountPanel";
 import { SettingsTab } from "@/components/SettingsTab";
 import {
   addCommunityPointNote,
   addPointObservation,
+  fetchCompanyBilling,
   fetchNearbyCompanyPoints,
   getCurrentSession,
   listCommunityPointNotes,
@@ -932,6 +934,8 @@ export default function SurveyPointAppPrototype() {
   const [authChecked, setAuthChecked] = useState(false);
   const [activeCompany, setActiveCompany] = useState(null);
   const [activeMembership, setActiveMembership] = useState(null);
+  const [billing, setBilling] = useState(null);
+  const [billingLoaded, setBillingLoaded] = useState(false);
 
   const [points, setPoints] = useState([]);
   const [query, setQuery] = useState("");
@@ -1015,6 +1019,33 @@ export default function SurveyPointAppPrototype() {
     const lastLocation = loadLastUserLocation();
     if (lastLocation) setUserLocation(lastLocation);
   }, []);
+
+  useEffect(() => {
+    if (!activeCompany?.id) {
+      setBilling(null);
+      setBillingLoaded(false);
+      return;
+    }
+    setBillingLoaded(false);
+    fetchCompanyBilling(activeCompany.id)
+      .then((snapshot) => {
+        setBilling(snapshot);
+      })
+      .catch((err) => {
+        console.error("fetchCompanyBilling failed", err);
+        setBilling(null);
+      })
+      .finally(() => setBillingLoaded(true));
+  }, [activeCompany?.id]);
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    if (params.get("billing") === "success" && activeCompany?.id) {
+      fetchCompanyBilling(activeCompany.id)
+        .then((snapshot) => setBilling(snapshot))
+        .catch(() => {});
+    }
+  }, [activeCompany?.id]);
 
   useEffect(() => {
     let mounted = true;
@@ -1391,6 +1422,10 @@ export default function SurveyPointAppPrototype() {
         }}
       />
     );
+  }
+
+  if (billingLoaded && billing && billing.has_access === false) {
+    return <TrialEndedGate company={activeCompany} membership={activeMembership} billing={billing} />;
   }
 
   return (
