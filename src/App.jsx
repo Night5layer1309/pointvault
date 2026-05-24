@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useRef, useState } from "react";
 import {
   AlertTriangle,
   CheckCircle2,
+  ChevronDown,
   Clock,
   Database,
   Download,
@@ -11,6 +12,7 @@ import {
   LocateFixed,
   Map,
   MapPin,
+  Menu,
   Navigation,
   Plus,
   RefreshCw,
@@ -21,6 +23,7 @@ import {
   Target,
   Upload,
   WifiOff,
+  X,
   XCircle,
 } from "lucide-react";
 import { motion } from "framer-motion";
@@ -956,6 +959,9 @@ export default function SurveyPointAppPrototype() {
   const [userLocation, setUserLocation] = useState(null);
   const [followUser, setFollowUser] = useState(true);
   const [installPrompt, setInstallPrompt] = useState(null);
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [mobileNavOpen, setMobileNavOpen] = useState(false);
+  const [mobileSearchOpen, setMobileSearchOpen] = useState(false);
 
   const [locationMessage, setLocationMessage] = useState("Tap You Are Here to use phone GPS.");
   const [gpsWatchId, setGpsWatchId] = useState(null);
@@ -1431,53 +1437,177 @@ export default function SurveyPointAppPrototype() {
   return (
     <div className="min-h-screen bg-slate-100 text-slate-950">
       <header className="sticky top-0 z-20 border-b border-slate-200 bg-white/95 backdrop-blur">
-        <div className="mx-auto flex max-w-7xl flex-col gap-3 px-4 py-4 md:flex-row md:items-center md:justify-between">
-          <div>
-            <div className="flex items-center gap-2">
-              <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-slate-950 text-white shadow-lg">
-                <MapPin size={20} />
-              </div>
-              <div>
-                <h1 className="text-2xl font-black tracking-tight">PointVault</h1>
-                <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-                  {activeCompany.name} · {activeMembership?.role || "member"}
-                </p>
-              </div>
+        <div className="mx-auto flex max-w-7xl items-center justify-between gap-2 px-3 py-2 md:gap-3 md:px-4 md:py-4">
+          <div className="flex min-w-0 items-center gap-2">
+            <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-2xl bg-slate-950 text-white shadow-lg md:h-10 md:w-10">
+              <MapPin size={18} className="md:hidden" />
+              <MapPin size={20} className="hidden md:block" />
+            </div>
+            <div className="min-w-0">
+              <h1 className="truncate text-lg font-black tracking-tight md:text-2xl">PointVault</h1>
+              <p className="truncate text-[10px] font-semibold uppercase tracking-wide text-slate-500 md:text-xs">
+                {activeCompany.name} · {activeMembership?.role || "member"}
+              </p>
             </div>
           </div>
 
-          <div className="flex flex-wrap items-center gap-2">
-            <Button onClick={locateUser} className="rounded-2xl px-4 py-3">
-              <LocateFixed size={16} className="mr-2" /> You Are Here
-            </Button>
-            <Button onClick={startGpsWatch} variant="secondary" className="rounded-2xl px-4 py-3">
-              <RefreshCw size={16} className="mr-2" /> {gpsWatchId ? "Stop GPS" : "Track GPS"}
-            </Button>
-            <Button onClick={() => loadNearbyPoints()} variant="secondary" className="rounded-2xl px-4 py-3" disabled={loadingPoints || (!userLocation && !mapCenter)}>
-              <Database size={16} className="mr-2" /> {loadingPoints ? "Loading..." : "Load Points"}
-            </Button>
-            {canDeletePoints && (
-              <Button onClick={cleanupDuplicateCompanyPoints} variant="secondary" className="rounded-2xl px-4 py-3">
-                <XCircle size={16} className="mr-2" /> Cleanup Duplicates
+          <div className="flex shrink-0 items-center gap-2">
+            <GpsFreshness userLocation={userLocation} />
+
+            {/* Desktop: full button row */}
+            <div className="hidden md:flex md:flex-wrap md:items-center md:gap-2">
+              <Button onClick={locateUser} className="rounded-2xl px-4 py-3">
+                <LocateFixed size={16} className="mr-2" /> You Are Here
               </Button>
-            )}
-            {installPrompt && (
-              <Button onClick={triggerInstall} variant="secondary" className="rounded-2xl px-4 py-3">
-                <Download size={16} className="mr-2" /> Install App
+              <Button onClick={startGpsWatch} variant="secondary" className="rounded-2xl px-4 py-3">
+                <RefreshCw size={16} className="mr-2" /> {gpsWatchId ? "Stop GPS" : "Track GPS"}
               </Button>
-            )}
-            <Button onClick={signOut} variant="secondary" className="rounded-2xl px-4 py-3">
-              Sign Out
-            </Button>
+              <Button onClick={() => loadNearbyPoints()} variant="secondary" className="rounded-2xl px-4 py-3" disabled={loadingPoints || (!userLocation && !mapCenter)}>
+                <Database size={16} className="mr-2" /> {loadingPoints ? "Loading..." : "Load Points"}
+              </Button>
+              {canDeletePoints && (
+                <Button onClick={cleanupDuplicateCompanyPoints} variant="secondary" className="rounded-2xl px-4 py-3">
+                  <XCircle size={16} className="mr-2" /> Cleanup Duplicates
+                </Button>
+              )}
+              {installPrompt && (
+                <Button onClick={triggerInstall} variant="secondary" className="rounded-2xl px-4 py-3">
+                  <Download size={16} className="mr-2" /> Install App
+                </Button>
+              )}
+              <Button onClick={signOut} variant="secondary" className="rounded-2xl px-4 py-3">
+                Sign Out
+              </Button>
+            </div>
+
+            {/* Mobile: search icon + hamburger */}
+            <button
+              onClick={() => setMobileSearchOpen((v) => !v)}
+              className="rounded-2xl bg-slate-100 p-2 text-slate-700 md:hidden"
+              aria-label="Toggle search"
+            >
+              <Search size={18} />
+            </button>
+            <button
+              onClick={() => setMobileMenuOpen(true)}
+              className="rounded-2xl bg-slate-950 p-2 text-white md:hidden"
+              aria-label="Open menu"
+            >
+              <Menu size={18} />
+            </button>
           </div>
         </div>
+
+        {/* Mobile slide-down search panel */}
+        {mobileSearchOpen && (
+          <div className="border-t border-slate-200 bg-white p-3 md:hidden">
+            <div className="grid gap-2">
+              <div className="relative">
+                <Search className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
+                <input
+                  value={query}
+                  onChange={(event) => setQuery(event.target.value)}
+                  onKeyDown={(event) => { if (event.key === "Enter") { findOrGeocode(); setMobileSearchOpen(false); } }}
+                  placeholder="Point ID, job, OR address — press Enter"
+                  className="w-full rounded-2xl border border-slate-200 bg-white py-3 pl-11 pr-4 text-sm outline-none focus:border-blue-400"
+                  autoFocus
+                />
+              </div>
+              <div className="grid grid-cols-3 gap-2">
+                <Button
+                  onClick={() => { findOrGeocode(); setMobileSearchOpen(false); }}
+                  disabled={findingAddress || !query.trim()}
+                  className="rounded-2xl px-3 py-2 text-xs"
+                >
+                  <MapPin size={14} className="mr-1" /> Find
+                </Button>
+                <select
+                  value={status}
+                  onChange={(event) => setStatus(event.target.value)}
+                  className="rounded-2xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold"
+                >
+                  <option value="all">All Statuses</option>
+                  <option value="found">Found</option>
+                  <option value="suspect">Suspect</option>
+                  <option value="record">Record Only</option>
+                  <option value="destroyed">Destroyed</option>
+                </select>
+                <select
+                  value={maxDistanceFeet}
+                  onChange={(event) => setMaxDistanceFeet(Number(event.target.value))}
+                  className="rounded-2xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold"
+                >
+                  <option value={1000}>1,000 ft</option>
+                  <option value={5280}>1 mile</option>
+                  <option value={26400}>5 miles</option>
+                  <option value={999999999}>No limit</option>
+                </select>
+              </div>
+              {findMessage && (
+                <div className="text-xs font-semibold text-slate-700">{findMessage}</div>
+              )}
+            </div>
+          </div>
+        )}
       </header>
+
+      {/* Mobile slide-in menu overlay */}
+      {mobileMenuOpen && (
+        <div className="fixed inset-0 z-40 md:hidden" onClick={() => setMobileMenuOpen(false)}>
+          <div className="absolute inset-0 bg-black/50" />
+          <div
+            className="absolute right-0 top-0 h-full w-72 bg-white p-4 shadow-xl"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div className="flex items-center justify-between">
+              <div className="font-bold text-slate-950">Menu</div>
+              <button
+                onClick={() => setMobileMenuOpen(false)}
+                className="rounded-xl bg-slate-100 p-2 text-slate-700"
+                aria-label="Close menu"
+              >
+                <X size={18} />
+              </button>
+            </div>
+            <div className="mt-4 grid gap-2">
+              <Button onClick={() => { locateUser(); setMobileMenuOpen(false); }} className="w-full rounded-2xl py-3">
+                <LocateFixed size={16} className="mr-2" /> You Are Here
+              </Button>
+              <Button onClick={() => { startGpsWatch(); setMobileMenuOpen(false); }} variant="secondary" className="w-full rounded-2xl py-3">
+                <RefreshCw size={16} className="mr-2" /> {gpsWatchId ? "Stop GPS" : "Track GPS"}
+              </Button>
+              <Button
+                onClick={() => { loadNearbyPoints(); setMobileMenuOpen(false); }}
+                variant="secondary"
+                className="w-full rounded-2xl py-3"
+                disabled={loadingPoints || (!userLocation && !mapCenter)}
+              >
+                <Database size={16} className="mr-2" /> {loadingPoints ? "Loading..." : "Load Points"}
+              </Button>
+              {canDeletePoints && (
+                <Button onClick={() => { cleanupDuplicateCompanyPoints(); setMobileMenuOpen(false); }} variant="secondary" className="w-full rounded-2xl py-3">
+                  <XCircle size={16} className="mr-2" /> Cleanup Duplicates
+                </Button>
+              )}
+              {installPrompt && (
+                <Button onClick={() => { triggerInstall(); setMobileMenuOpen(false); }} variant="secondary" className="w-full rounded-2xl py-3">
+                  <Download size={16} className="mr-2" /> Install App
+                </Button>
+              )}
+              <div className="my-2 h-px bg-slate-200" />
+              <Button onClick={signOut} variant="secondary" className="w-full rounded-2xl py-3">
+                Sign Out
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
 
       <main className="mx-auto grid max-w-7xl gap-4 px-4 py-4 lg:grid-cols-[1fr_380px]">
         <section className="space-y-4">
           <CompanyAdminPanel company={activeCompany} membership={activeMembership} />
 
-          <Card className="rounded-3xl border-0 shadow-sm">
+          <Card className="hidden rounded-3xl border-0 shadow-sm md:block">
             <CardContent className="p-4">
               <div className="grid gap-3 md:grid-cols-[1fr_auto_auto_auto_auto] md:items-center">
                 <div className="relative">
@@ -1546,7 +1676,59 @@ export default function SurveyPointAppPrototype() {
             </CardContent>
           </Card>
 
-          <Card className="rounded-3xl border-0 shadow-sm">
+          {/* Mobile: page dropdown */}
+          <Card className="rounded-3xl border-0 shadow-sm md:hidden">
+            <CardContent className="p-3">
+              <button
+                onClick={() => setMobileNavOpen((v) => !v)}
+                className="flex w-full items-center justify-between rounded-2xl bg-slate-950 px-4 py-3 text-left text-sm font-bold text-white"
+              >
+                <span className="flex items-center gap-2">
+                  {tab === "map" && <><Map size={16} /> Map</>}
+                  {tab === "list" && <><List size={16} /> List</>}
+                  {tab === "detail" && <><Target size={16} /> Detail</>}
+                  {tab === "add" && <><Plus size={16} /> Add Local</>}
+                  {tab === "import" && <><Upload size={16} /> Data Import</>}
+                  {tab === "settings" && <><SettingsIcon size={16} /> Settings</>}
+                </span>
+                <ChevronDown size={18} className={mobileNavOpen ? "rotate-180 transition" : "transition"} />
+              </button>
+              {mobileNavOpen && (
+                <div className="mt-2 grid gap-1 rounded-2xl bg-slate-50 p-2">
+                  {[
+                    { id: "map", label: "Map", icon: Map },
+                    { id: "list", label: "List", icon: List },
+                    { id: "detail", label: "Detail", icon: Target, disabled: !selectedPoint },
+                    { id: "add", label: "Add Local", icon: Plus },
+                    { id: "import", label: "Data Import", icon: Upload },
+                    { id: "settings", label: "Settings", icon: SettingsIcon },
+                  ].map((option) => {
+                    const Icon = option.icon;
+                    const active = tab === option.id;
+                    return (
+                      <button
+                        key={option.id}
+                        disabled={option.disabled}
+                        onClick={() => { setTab(option.id); setMobileNavOpen(false); }}
+                        className={`flex items-center gap-2 rounded-xl px-3 py-3 text-left text-sm font-semibold ${
+                          active
+                            ? "bg-slate-950 text-white"
+                            : option.disabled
+                              ? "text-slate-400"
+                              : "bg-white text-slate-800 hover:bg-slate-100"
+                        }`}
+                      >
+                        <Icon size={16} /> {option.label}
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
+            </CardContent>
+          </Card>
+
+          {/* Desktop: full button row */}
+          <Card className="hidden rounded-3xl border-0 shadow-sm md:block">
             <CardContent className="flex flex-wrap gap-2 p-3">
               <Button onClick={() => setTab("map")} variant={tab === "map" ? "default" : "secondary"} className="rounded-2xl px-4 py-3">
                 <Map size={16} className="mr-2" /> Map
