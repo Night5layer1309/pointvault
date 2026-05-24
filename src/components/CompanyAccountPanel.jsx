@@ -379,7 +379,7 @@ function BillingBadge({ status }) {
   );
 }
 
-function BillingPanel({ company, canAdmin }) {
+export function BillingPanel({ company, canAdmin }) {
   const [billing, setBilling] = useState(null);
   const [loading, setLoading] = useState(false);
   const [working, setWorking] = useState(false);
@@ -496,6 +496,174 @@ function BillingPanel({ company, canAdmin }) {
         {error && (
           <div className="mt-3 rounded-2xl bg-red-50 px-3 py-2 text-xs font-semibold text-red-800">{error}</div>
         )}
+      </CardContent>
+    </Card>
+  );
+}
+
+export function TeamPanel({ company, membership }) {
+  const [members, setMembers] = useState([]);
+  const [message, setMessage] = useState("");
+  const canAdmin = ["owner", "admin"].includes(membership?.role);
+
+  const load = async () => {
+    if (!company?.id || !canAdmin) return;
+    try {
+      const memberRows = await fetchCompanyMembers(company.id);
+      setMembers(memberRows);
+    } catch (error) {
+      setMessage(error.message || "Could not load company members.");
+    }
+  };
+
+  useEffect(() => { load(); }, [company?.id, membership?.role]);
+
+  if (!canAdmin) return null;
+
+  const seatLimitLabel = company.seat_limit === null || company.seat_limit === undefined
+    ? "unlimited"
+    : String(company.seat_limit);
+
+  return (
+    <Card className="rounded-3xl border-0 shadow-lg">
+      <CardContent className="p-5">
+        <div className="mb-4 flex items-center justify-between gap-3">
+          <div>
+            <div className="flex items-center gap-2 font-bold text-slate-950"><Users size={18} /> Team members</div>
+            <p className="mt-1 text-xs text-slate-500">{company.name} seats: {members.length}/{seatLimitLabel}</p>
+          </div>
+          <Button onClick={load} variant="secondary" className="rounded-2xl px-3 py-2"><RefreshCw size={15} /></Button>
+        </div>
+
+        {message && <div className="mb-3 rounded-2xl bg-blue-50 p-3 text-xs font-semibold text-blue-900 break-all">{message}</div>}
+
+        <div className="space-y-2">
+          {members.length === 0 && (
+            <div className="rounded-2xl border border-dashed border-slate-300 p-4 text-sm text-slate-500">
+              No members loaded yet. Use the Invite tab to add your team.
+            </div>
+          )}
+          {members.map((row) => (
+            <div key={row.id} className="flex items-center justify-between rounded-2xl bg-slate-50 px-3 py-2 text-sm">
+              <span>{row.profile?.full_name || row.profile?.email || row.user_id}</span>
+              <span className="rounded-full bg-white px-2 py-1 text-xs font-bold text-slate-700">{row.role}</span>
+            </div>
+          ))}
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+export function InvitePanel({ company, membership }) {
+  const [invites, setInvites] = useState([]);
+  const [email, setEmail] = useState("");
+  const [role, setRole] = useState("member");
+  const [latestInvite, setLatestInvite] = useState(null);
+  const [message, setMessage] = useState("");
+  const canAdmin = ["owner", "admin"].includes(membership?.role);
+
+  const load = async () => {
+    if (!company?.id || !canAdmin) return;
+    try {
+      const inviteRows = await fetchCompanyInvites(company.id);
+      setInvites(inviteRows);
+    } catch (error) {
+      setMessage(error.message || "Could not load invites.");
+    }
+  };
+
+  useEffect(() => { load(); }, [company?.id, membership?.role]);
+
+  const invite = async () => {
+    if (!email.trim()) return;
+    try {
+      const invitedEmail = email.trim();
+      const inviteLink = await createCompanyInviteLink({ companyId: company.id, email: invitedEmail, role });
+      setLatestInvite({ ...inviteLink, email: invitedEmail, role });
+      setMessage("Invite created. Share the QR code or copy the link below.");
+      setEmail("");
+      await load();
+    } catch (error) {
+      setMessage(error.message || "Could not create invite.");
+    }
+  };
+
+  const generateOpenInvite = async () => {
+    try {
+      const inviteLink = await createOpenCompanyInviteLink({
+        companyId: company.id,
+        ttlMinutes: 1440,
+        role: "member",
+        maxUses: null,
+      });
+      setLatestInvite({ ...inviteLink, email: "", role: "member" });
+      setMessage("Team QR ready. Show it to anyone you want to join — good for 24 hours.");
+      await load();
+    } catch (error) {
+      setMessage(error.message || "Could not create open invite.");
+    }
+  };
+
+  if (!canAdmin) return null;
+
+  return (
+    <Card className="rounded-3xl border-0 shadow-lg">
+      <CardContent className="p-5">
+        <div className="mb-4 flex items-center justify-between gap-3">
+          <div className="flex items-center gap-2 font-bold text-slate-950"><Send size={18} /> Invite team members</div>
+          <Button onClick={load} variant="secondary" className="rounded-2xl px-3 py-2"><RefreshCw size={15} /></Button>
+        </div>
+
+        <div className="mb-4 flex flex-col gap-3 rounded-2xl border border-slate-200 bg-slate-50 p-4 md:flex-row md:items-center md:justify-between">
+          <div>
+            <div className="font-bold text-slate-950">Open team QR</div>
+            <p className="mt-1 text-xs leading-5 text-slate-500">
+              Show this to your team — anyone can scan to join. Good for 24 hours, unlimited scans.
+            </p>
+          </div>
+          <Button onClick={generateOpenInvite} className="rounded-2xl px-4 py-3">
+            <QrCode size={15} className="mr-2" /> Generate Team QR
+          </Button>
+        </div>
+
+        <div className="mb-4 grid gap-2 md:grid-cols-[1fr_auto_auto]">
+          <input className="rounded-2xl border border-slate-200 px-4 py-3 text-sm outline-none focus:border-blue-400" placeholder="newuser@company.com (specific person)" value={email} onChange={(e) => setEmail(e.target.value)} />
+          <select className="rounded-2xl border border-slate-200 px-3 py-3 text-sm" value={role} onChange={(e) => setRole(e.target.value)}><option value="member">Member</option><option value="admin">Admin</option></select>
+          <Button onClick={invite} variant="secondary" className="rounded-2xl px-4 py-3"><Send size={15} className="mr-2" /> Invite</Button>
+        </div>
+
+        {message && <div className="mb-3 rounded-2xl bg-blue-50 p-3 text-xs font-semibold text-blue-900 break-all">{message}</div>}
+        {latestInvite && <InviteQrCard inviteUrl={latestInvite.url} inviteToken={latestInvite.token} email={latestInvite.email} />}
+
+        <div className="space-y-2">
+          {invites
+            .filter((inviteRow) => {
+              const isExpired = inviteRow.expires_at && new Date(inviteRow.expires_at) < new Date();
+              const isUsedUp = inviteRow.max_uses !== null && inviteRow.uses >= inviteRow.max_uses;
+              return !isExpired && !isUsedUp;
+            })
+            .map((inviteRow) => {
+              const url = buildCompanyInviteUrl(inviteRow.token);
+              const usageLabel = inviteRow.max_uses === null
+                ? `${inviteRow.uses} joined (unlimited)`
+                : `${inviteRow.uses}/${inviteRow.max_uses} used`;
+              const expiresLabel = inviteRow.expires_at
+                ? `expires ${new Date(inviteRow.expires_at).toLocaleString()}`
+                : "no expiry";
+              return (
+                <div key={inviteRow.id} className="rounded-2xl bg-amber-50 px-3 py-2 text-xs text-amber-900">
+                  <div className="font-bold">
+                    {inviteRow.email
+                      ? `Pending: ${inviteRow.email} as ${inviteRow.role}`
+                      : `Open team invite (${inviteRow.role})`}
+                  </div>
+                  <div className="mt-1 text-amber-700">{usageLabel} · {expiresLabel}</div>
+                  <div className="mt-1 break-all">{url}</div>
+                </div>
+              );
+            })}
+        </div>
       </CardContent>
     </Card>
   );

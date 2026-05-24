@@ -4,6 +4,7 @@ import {
   CheckCircle2,
   ChevronDown,
   Clock,
+  CreditCard,
   Database,
   Download,
   Filter,
@@ -19,6 +20,7 @@ import {
   Satellite,
   Save,
   Search,
+  Send,
   Settings as SettingsIcon,
   Target,
   Upload,
@@ -38,9 +40,11 @@ import * as EL from "esri-leaflet";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import {
-  CompanyAdminPanel,
+  BillingPanel,
   CompanySetupPanel,
+  InvitePanel,
   SignInPanel,
+  TeamPanel,
   TrialEndedGate,
 } from "@/components/CompanyAccountPanel";
 import { SettingsTab } from "@/components/SettingsTab";
@@ -1555,7 +1559,7 @@ export default function SurveyPointAppPrototype() {
 
       {/* Mobile slide-in menu overlay */}
       {mobileMenuOpen && (
-        <div className="fixed inset-0 z-40 md:hidden" onClick={() => setMobileMenuOpen(false)}>
+        <div className="fixed inset-0 z-[60] md:hidden" onClick={() => setMobileMenuOpen(false)}>
           <div className="absolute inset-0 bg-black/50" />
           <div
             className="absolute right-0 top-0 h-full w-72 bg-white p-4 shadow-xl"
@@ -1572,8 +1576,19 @@ export default function SurveyPointAppPrototype() {
               </button>
             </div>
             <div className="mt-4 grid gap-2">
-              <Button onClick={() => { startGpsWatch(); setMobileMenuOpen(false); }} className="w-full rounded-2xl py-3">
+              <Button onClick={() => { locateUser(); setMobileMenuOpen(false); }} className="w-full rounded-2xl py-3">
+                <LocateFixed size={16} className="mr-2" /> You Are Here
+              </Button>
+              <Button onClick={() => { startGpsWatch(); setMobileMenuOpen(false); }} variant="secondary" className="w-full rounded-2xl py-3">
                 <RefreshCw size={16} className="mr-2" /> {gpsWatchId ? "Stop GPS" : "Track GPS"}
+              </Button>
+              <Button
+                onClick={() => { loadNearbyPoints(); setMobileMenuOpen(false); }}
+                variant="secondary"
+                className="w-full rounded-2xl py-3"
+                disabled={loadingPoints || (!userLocation && !mapCenter)}
+              >
+                <Database size={16} className="mr-2" /> {loadingPoints ? "Loading..." : "Load Points"}
               </Button>
               {installPrompt && (
                 <Button onClick={() => { triggerInstall(); setMobileMenuOpen(false); }} variant="secondary" className="w-full rounded-2xl py-3">
@@ -1673,7 +1688,9 @@ export default function SurveyPointAppPrototype() {
                   {tab === "detail" && <><Target size={16} /> Detail</>}
                   {tab === "add" && <><Plus size={16} /> Add Local</>}
                   {tab === "import" && <><Upload size={16} /> Data Import</>}
-                  {tab === "manage" && <><Users size={16} /> Manage</>}
+                  {tab === "billing" && <><CreditCard size={16} /> Billing</>}
+                  {tab === "team" && <><Users size={16} /> Team</>}
+                  {tab === "invite" && <><Send size={16} /> Invite</>}
                   {tab === "settings" && <><SettingsIcon size={16} /> Settings</>}
                 </span>
                 <ChevronDown size={18} className={mobileNavOpen ? "rotate-180 transition" : "transition"} />
@@ -1686,7 +1703,9 @@ export default function SurveyPointAppPrototype() {
                     { id: "detail", label: "Detail", icon: Target, disabled: !selectedPoint },
                     { id: "add", label: "Add Local", icon: Plus },
                     { id: "import", label: "Data Import", icon: Upload },
-                    { id: "manage", label: "Manage (Team & Billing)", icon: Users },
+                    { id: "billing", label: "Billing", icon: CreditCard },
+                    { id: "team", label: "Team", icon: Users },
+                    { id: "invite", label: "Invite", icon: Send },
                     { id: "settings", label: "Settings", icon: SettingsIcon },
                   ].map((option) => {
                     const Icon = option.icon;
@@ -1731,8 +1750,14 @@ export default function SurveyPointAppPrototype() {
               <Button onClick={() => setTab("import")} variant={tab === "import" ? "default" : "secondary"} className="rounded-2xl px-4 py-3">
                 <Upload size={16} className="mr-2" /> Data Import
               </Button>
-              <Button onClick={() => setTab("manage")} variant={tab === "manage" ? "default" : "secondary"} className="rounded-2xl px-4 py-3">
-                <Users size={16} className="mr-2" /> Manage
+              <Button onClick={() => setTab("billing")} variant={tab === "billing" ? "default" : "secondary"} className="rounded-2xl px-4 py-3">
+                <CreditCard size={16} className="mr-2" /> Billing
+              </Button>
+              <Button onClick={() => setTab("team")} variant={tab === "team" ? "default" : "secondary"} className="rounded-2xl px-4 py-3">
+                <Users size={16} className="mr-2" /> Team
+              </Button>
+              <Button onClick={() => setTab("invite")} variant={tab === "invite" ? "default" : "secondary"} className="rounded-2xl px-4 py-3">
+                <Send size={16} className="mr-2" /> Invite
               </Button>
               <Button onClick={() => setTab("settings")} variant={tab === "settings" ? "default" : "secondary"} className="rounded-2xl px-4 py-3">
                 <SettingsIcon size={16} className="mr-2" /> Settings
@@ -1753,83 +1778,79 @@ export default function SurveyPointAppPrototype() {
                 >
                   <Search size={16} className="mr-2" /> Search This Area
                 </Button>
-                <div className="relative">
-                  <Button
-                    onClick={() => setLayersOpen((v) => !v)}
-                    variant="secondary"
-                    className="rounded-2xl px-4 py-3"
-                  >
-                    <Layers size={16} className="mr-2" /> Layers
-                    <ChevronDown size={14} className={`ml-2 ${layersOpen ? "rotate-180" : ""} transition`} />
-                  </Button>
-                  {layersOpen && (
-                    <>
-                      <div className="fixed inset-0 z-30" onClick={() => setLayersOpen(false)} />
-                      <div className="absolute left-0 top-full z-40 mt-2 w-64 rounded-2xl border border-slate-200 bg-white p-3 shadow-xl">
-                        <div className="mb-2 text-xs font-bold uppercase tracking-wide text-slate-500">Basemap</div>
-                        <div className="grid gap-1">
-                          {[
-                            { id: "aerial", label: "Aerial", icon: Satellite },
-                            { id: "hybrid", label: "Hybrid", icon: Layers },
-                            { id: "streets", label: "Streets", icon: Map },
-                            { id: "topo", label: "Topo", icon: Layers },
-                            { id: "usgs", label: "USGS Hi-Res", icon: Satellite },
-                          ].map((option) => {
-                            const Icon = option.icon;
-                            const active = basemap === option.id;
-                            return (
-                              <button
-                                key={option.id}
-                                onClick={() => { setBasemap(option.id); setLayersOpen(false); }}
-                                className={`flex items-center gap-2 rounded-xl px-3 py-2 text-left text-sm font-semibold ${
-                                  active ? "bg-slate-950 text-white" : "bg-slate-50 text-slate-800 hover:bg-slate-100"
-                                }`}
-                              >
-                                <Icon size={14} /> {option.label}
-                              </button>
-                            );
-                          })}
-                        </div>
-                        <div className="mt-3 h-px bg-slate-200" />
-                        <div className="mt-3 mb-2 text-xs font-bold uppercase tracking-wide text-slate-500">Overlays</div>
-                        <button
-                          onClick={() => setShowParcels((v) => !v)}
-                          className={`flex w-full items-center justify-between rounded-xl px-3 py-2 text-left text-sm font-semibold ${
-                            showParcels ? "bg-slate-950 text-white" : "bg-slate-50 text-slate-800 hover:bg-slate-100"
-                          }`}
-                        >
-                          <span className="flex items-center gap-2"><Filter size={14} /> Florida Parcels</span>
-                          <span className="text-xs">{showParcels ? "on" : "off"}</span>
-                        </button>
-                        <div className="mt-3 h-px bg-slate-200" />
-                        <div className="mt-3 mb-2 text-xs font-bold uppercase tracking-wide text-slate-500">GPS</div>
-                        <button
-                          onClick={() => setFollowUser((v) => !v)}
-                          disabled={!userLocation}
-                          className={`flex w-full items-center justify-between rounded-xl px-3 py-2 text-left text-sm font-semibold ${
-                            !userLocation
-                              ? "cursor-not-allowed bg-slate-100 text-slate-400"
-                              : followUser
-                                ? "bg-slate-950 text-white"
-                                : "bg-slate-50 text-slate-800 hover:bg-slate-100"
-                          }`}
-                        >
-                          <span className="flex items-center gap-2"><LocateFixed size={14} /> Follow GPS</span>
-                          <span className="text-xs">{followUser ? "on" : "off"}</span>
-                        </button>
-                        {!followUser && userLocation && (
-                          <button
-                            onClick={() => { setFollowUser(true); setLayersOpen(false); }}
-                            className="mt-2 flex w-full items-center gap-2 rounded-xl bg-slate-50 px-3 py-2 text-left text-sm font-semibold text-slate-800 hover:bg-slate-100"
-                          >
-                            <Target size={14} /> Recenter on GPS
-                          </button>
-                        )}
-                      </div>
-                    </>
-                  )}
-                </div>
+                <Button
+                  onClick={() => setLayersOpen((v) => !v)}
+                  variant="secondary"
+                  className="rounded-2xl px-4 py-3"
+                >
+                  <Layers size={16} className="mr-2" /> Layers
+                  <ChevronDown size={14} className={`ml-2 ${layersOpen ? "rotate-180" : ""} transition`} />
+                </Button>
               </div>
+
+              {layersOpen && (
+                <div className="rounded-2xl border border-slate-200 bg-white p-3 shadow-sm">
+                  <div className="mb-2 text-xs font-bold uppercase tracking-wide text-slate-500">Basemap</div>
+                  <div className="grid grid-cols-2 gap-1 md:grid-cols-5">
+                    {[
+                      { id: "aerial", label: "Aerial", icon: Satellite },
+                      { id: "hybrid", label: "Hybrid", icon: Layers },
+                      { id: "streets", label: "Streets", icon: Map },
+                      { id: "topo", label: "Topo", icon: Layers },
+                      { id: "usgs", label: "USGS Hi-Res", icon: Satellite },
+                    ].map((option) => {
+                      const Icon = option.icon;
+                      const active = basemap === option.id;
+                      return (
+                        <button
+                          key={option.id}
+                          onClick={() => setBasemap(option.id)}
+                          className={`flex items-center gap-2 rounded-xl px-3 py-2 text-left text-sm font-semibold ${
+                            active ? "bg-slate-950 text-white" : "bg-slate-50 text-slate-800 hover:bg-slate-100"
+                          }`}
+                        >
+                          <Icon size={14} /> {option.label}
+                        </button>
+                      );
+                    })}
+                  </div>
+                  <div className="mt-3 h-px bg-slate-200" />
+                  <div className="mt-3 mb-2 text-xs font-bold uppercase tracking-wide text-slate-500">Overlays & GPS</div>
+                  <div className="grid grid-cols-2 gap-1 md:grid-cols-3">
+                    <button
+                      onClick={() => setShowParcels((v) => !v)}
+                      className={`flex items-center justify-between gap-2 rounded-xl px-3 py-2 text-left text-sm font-semibold ${
+                        showParcels ? "bg-slate-950 text-white" : "bg-slate-50 text-slate-800 hover:bg-slate-100"
+                      }`}
+                    >
+                      <span className="flex items-center gap-2"><Filter size={14} /> Parcels</span>
+                      <span className="text-xs">{showParcels ? "on" : "off"}</span>
+                    </button>
+                    <button
+                      onClick={() => setFollowUser((v) => !v)}
+                      disabled={!userLocation}
+                      className={`flex items-center justify-between gap-2 rounded-xl px-3 py-2 text-left text-sm font-semibold ${
+                        !userLocation
+                          ? "cursor-not-allowed bg-slate-100 text-slate-400"
+                          : followUser
+                            ? "bg-slate-950 text-white"
+                            : "bg-slate-50 text-slate-800 hover:bg-slate-100"
+                      }`}
+                    >
+                      <span className="flex items-center gap-2"><LocateFixed size={14} /> Follow GPS</span>
+                      <span className="text-xs">{followUser ? "on" : "off"}</span>
+                    </button>
+                    {!followUser && userLocation && (
+                      <button
+                        onClick={() => setFollowUser(true)}
+                        className="flex items-center gap-2 rounded-xl bg-slate-50 px-3 py-2 text-left text-sm font-semibold text-slate-800 hover:bg-slate-100"
+                      >
+                        <Target size={14} /> Recenter
+                      </button>
+                    )}
+                  </div>
+                </div>
+              )}
               <GisMap
                 points={filteredPoints}
                 selectedPoint={selectedPoint}
@@ -1882,34 +1903,16 @@ export default function SurveyPointAppPrototype() {
             />
           )}
 
-          {tab === "manage" && (
-            <div className="space-y-4">
-              <CompanyAdminPanel company={activeCompany} membership={activeMembership} />
-              <Card className="rounded-3xl border-0 shadow-sm">
-                <CardContent className="p-4">
-                  <div className="mb-2 font-bold text-slate-950">Quick actions</div>
-                  <div className="grid gap-2 md:grid-cols-2">
-                    <Button
-                      onClick={() => loadNearbyPoints()}
-                      variant="secondary"
-                      className="rounded-2xl py-3"
-                      disabled={loadingPoints || (!userLocation && !mapCenter)}
-                    >
-                      <Database size={16} className="mr-2" /> {loadingPoints ? "Loading..." : "Reload Company Points"}
-                    </Button>
-                    {canDeletePoints && (
-                      <Button
-                        onClick={cleanupDuplicateCompanyPoints}
-                        variant="secondary"
-                        className="rounded-2xl py-3"
-                      >
-                        <XCircle size={16} className="mr-2" /> Cleanup Duplicate Points
-                      </Button>
-                    )}
-                  </div>
-                </CardContent>
-              </Card>
-            </div>
+          {tab === "billing" && (
+            <BillingPanel company={activeCompany} canAdmin={canDeletePoints} />
+          )}
+
+          {tab === "team" && (
+            <TeamPanel company={activeCompany} membership={activeMembership} />
+          )}
+
+          {tab === "invite" && (
+            <InvitePanel company={activeCompany} membership={activeMembership} />
           )}
 
           {tab === "settings" && (
