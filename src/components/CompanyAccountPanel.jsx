@@ -15,6 +15,7 @@ import {
   RefreshCw,
   Send,
   ShieldCheck,
+  Trash2,
   Users,
 } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
@@ -31,6 +32,7 @@ import {
   fetchCompanyMemberships,
   getInviteTokenFromUrl,
   openBillingPortal,
+  removeCompanyMember,
   signInWithEmail,
   signInWithPassword,
   signOut,
@@ -504,7 +506,10 @@ export function BillingPanel({ company, canAdmin }) {
 export function TeamPanel({ company, membership }) {
   const [members, setMembers] = useState([]);
   const [message, setMessage] = useState("");
+  const [removingUserId, setRemovingUserId] = useState(null);
   const canAdmin = ["owner", "admin"].includes(membership?.role);
+  const callerRole = membership?.role;
+  const callerUserId = membership?.user_id;
 
   const load = async () => {
     if (!company?.id || !canAdmin) return;
@@ -517,6 +522,31 @@ export function TeamPanel({ company, membership }) {
   };
 
   useEffect(() => { load(); }, [company?.id, membership?.role]);
+
+  const removeMember = async (row) => {
+    const displayName = row.profile?.full_name || row.profile?.email || row.user_id;
+    if (!window.confirm(`Remove ${displayName} from ${company.name}? They'll lose access immediately. Their past observations and field notes stay with the company.`)) {
+      return;
+    }
+    setRemovingUserId(row.user_id);
+    setMessage("");
+    try {
+      await removeCompanyMember({ companyId: company.id, userId: row.user_id });
+      await load();
+    } catch (error) {
+      setMessage(error.message || "Could not remove member.");
+    } finally {
+      setRemovingUserId(null);
+    }
+  };
+
+  const canRemove = (row) => {
+    if (!canAdmin) return false;
+    if (row.user_id === callerUserId) return false;
+    if (row.role === "owner") return false;
+    if (callerRole === "admin" && row.role === "admin") return false;
+    return true;
+  };
 
   if (!canAdmin) return null;
 
@@ -535,7 +565,7 @@ export function TeamPanel({ company, membership }) {
           <Button onClick={load} variant="secondary" className="rounded-2xl px-3 py-2"><RefreshCw size={15} /></Button>
         </div>
 
-        {message && <div className="mb-3 rounded-2xl bg-blue-50 p-3 text-xs font-semibold text-blue-900 break-all">{message}</div>}
+        {message && <div className="mb-3 rounded-2xl bg-red-50 p-3 text-xs font-semibold text-red-800 break-all">{message}</div>}
 
         <div className="space-y-2">
           {members.length === 0 && (
@@ -543,12 +573,30 @@ export function TeamPanel({ company, membership }) {
               No members loaded yet. Use the Invite tab to add your team.
             </div>
           )}
-          {members.map((row) => (
-            <div key={row.id} className="flex items-center justify-between rounded-2xl bg-slate-50 px-3 py-2 text-sm">
-              <span>{row.profile?.full_name || row.profile?.email || row.user_id}</span>
-              <span className="rounded-full bg-white px-2 py-1 text-xs font-bold text-slate-700">{row.role}</span>
-            </div>
-          ))}
+          {members.map((row) => {
+            const name = row.profile?.full_name || row.profile?.email || row.user_id;
+            const removable = canRemove(row);
+            const removing = removingUserId === row.user_id;
+            return (
+              <div key={row.id} className="flex items-center justify-between gap-2 rounded-2xl bg-slate-50 px-3 py-2 text-sm">
+                <span className="min-w-0 truncate">{name}</span>
+                <div className="flex items-center gap-2">
+                  <span className="rounded-full bg-white px-2 py-1 text-xs font-bold text-slate-700">{row.role}</span>
+                  {removable && (
+                    <button
+                      onClick={() => removeMember(row)}
+                      disabled={removing}
+                      className="rounded-full border border-red-200 bg-white p-2 text-red-700 hover:bg-red-50 disabled:opacity-50"
+                      title={`Remove ${name}`}
+                      aria-label={`Remove ${name}`}
+                    >
+                      <Trash2 size={14} />
+                    </button>
+                  )}
+                </div>
+              </div>
+            );
+          })}
         </div>
       </CardContent>
     </Card>

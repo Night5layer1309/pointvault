@@ -110,6 +110,15 @@ export async function acceptInvite(token) {
   return data;
 }
 
+export async function removeCompanyMember({ companyId, userId }) {
+  const { data, error } = await supabase.rpc("remove_company_member", {
+    target_company_id: companyId,
+    target_user_id: userId,
+  });
+  if (error) throw error;
+  return data;
+}
+
 export async function fetchCompanyMembers(companyId) {
   const { data: memberships, error } = await supabase
     .from("company_memberships")
