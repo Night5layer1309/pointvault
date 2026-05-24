@@ -110,6 +110,25 @@ export async function acceptInvite(token) {
   return data;
 }
 
+export async function shareCompanyPointToCommunity(companyPointId) {
+  if (!companyPointId) throw new Error("Missing point ID.");
+  const { data, error } = await supabase.rpc("share_company_point_to_community", {
+    target_company_point_id: companyPointId,
+  });
+  if (error) throw error;
+  return data;
+}
+
+export async function shareCompanyPointsBulk(companyPointIds) {
+  const ids = Array.isArray(companyPointIds) ? companyPointIds.filter(Boolean) : [];
+  if (ids.length === 0) return { shared: 0, failed: 0 };
+  const { data, error } = await supabase.rpc("share_company_points_bulk", {
+    target_point_ids: ids,
+  });
+  if (error) throw error;
+  return data || { shared: 0, failed: 0 };
+}
+
 export async function removeCompanyMember({ companyId, userId }) {
   const { data, error } = await supabase.rpc("remove_company_member", {
     target_company_id: companyId,

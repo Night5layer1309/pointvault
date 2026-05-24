@@ -57,6 +57,8 @@ import {
   listCommunityPointNotes,
   listPointObservations,
   onAuthChange,
+  shareCompanyPointToCommunity,
+  shareCompanyPointsBulk,
 } from "@/lib/companyAccounts";
 import {
   cleanupCompanyDuplicatePoints,
@@ -625,6 +627,27 @@ function PointDetail({ point, company, onUpdatePoint, onDeletePoint, canDeletePo
   const [observationsLoading, setObservationsLoading] = useState(false);
   const [observationError, setObservationError] = useState("");
   const [savingObservation, setSavingObservation] = useState(false);
+  const [sharingToCommunity, setSharingToCommunity] = useState(false);
+  const [shareMessage, setShareMessage] = useState("");
+
+  const isOwnPoint = point.access_level === "full" || !point.access_level;
+  const alreadyShared = point.visibility === "community";
+  const canShare = isOwnPoint && !alreadyShared && !!point.dbId;
+
+  const shareToCommunity = async () => {
+    if (!point.dbId) return;
+    setSharingToCommunity(true);
+    setShareMessage("");
+    try {
+      await shareCompanyPointToCommunity(point.dbId);
+      onUpdatePoint({ ...point, visibility: "community" });
+      setShareMessage("Shared to community. Other companies in your community tier can now see it.");
+    } catch (error) {
+      setShareMessage(error?.message || "Could not share to community.");
+    } finally {
+      setSharingToCommunity(false);
+    }
+  };
 
   const canPersistObservations = !!point.dbId;
 
@@ -764,6 +787,31 @@ function PointDetail({ point, company, onUpdatePoint, onDeletePoint, canDeletePo
               </Button>
             )}
           </div>
+
+          {isOwnPoint && (
+            <div className="mt-3">
+              {alreadyShared ? (
+                <div className="rounded-2xl bg-emerald-50 px-3 py-2 text-xs font-semibold text-emerald-800">
+                  Shared to the community pool.
+                </div>
+              ) : canShare ? (
+                <Button
+                  onClick={shareToCommunity}
+                  disabled={sharingToCommunity}
+                  variant="secondary"
+                  className="w-full rounded-2xl border border-blue-200 bg-blue-50 py-3 text-blue-900 hover:bg-blue-100"
+                >
+                  <Upload size={16} className="mr-2" />
+                  {sharingToCommunity ? "Sharing..." : "Share this point to community"}
+                </Button>
+              ) : null}
+              {shareMessage && (
+                <div className="mt-2 rounded-2xl bg-slate-50 px-3 py-2 text-xs font-semibold text-slate-700">
+                  {shareMessage}
+                </div>
+              )}
+            </div>
+          )}
 
           <div className="mt-5 rounded-3xl border border-slate-200 bg-white p-3">
             <div className="mb-2 flex items-center justify-between">
@@ -968,6 +1016,8 @@ export default function SurveyPointAppPrototype() {
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
   const [mobileSearchOpen, setMobileSearchOpen] = useState(false);
   const [layersOpen, setLayersOpen] = useState(false);
+  const [bulkSharing, setBulkSharing] = useState(false);
+  const [bulkShareMessage, setBulkShareMessage] = useState("");
 
   const [locationMessage, setLocationMessage] = useState("Tap You Are Here to use phone GPS.");
   const [gpsWatchId, setGpsWatchId] = useState(null);
@@ -1884,6 +1934,56 @@ export default function SurveyPointAppPrototype() {
                   canDeletePoints={canDeletePoints}
                 />
               )}
+
+              {(() => {
+                const ownShareable = filteredPoints.filter(
+                  (p) => (p.access_level === "full" || !p.access_level) && p.visibility !== "community" && p.dbId,
+                );
+                if (ownShareable.length === 0) return null;
+                const onBulkShare = async () => {
+                  if (!window.confirm(`Share ${ownShareable.length} point${ownShareable.length === 1 ? "" : "s"} to the community pool? Other companies in your community tier will see them. This can't be undone individually — you'd have to unshare each point manually later.`)) {
+                    return;
+                  }
+                  setBulkSharing(true);
+                  setBulkShareMessage("");
+                  try {
+                    const ids = ownShareable.map((p) => p.dbId);
+                    const result = await shareCompanyPointsBulk(ids);
+                    setBulkShareMessage(`Shared ${result.shared}${result.failed ? `, failed ${result.failed}` : ""}. Reloading...`);
+                    await loadNearbyPoints();
+                  } catch (err) {
+                    setBulkShareMessage(err?.message || "Bulk share failed.");
+                  } finally {
+                    setBulkSharing(false);
+                  }
+                };
+                return (
+                  <Card className="rounded-3xl border border-blue-200 bg-blue-50 shadow-sm">
+                    <CardContent className="flex flex-col gap-3 p-4 md:flex-row md:items-center md:justify-between">
+                      <div className="text-sm leading-6 text-blue-950">
+                        <div className="font-bold">Share visible points to community</div>
+                        <p className="text-xs">
+                          {ownShareable.length.toLocaleString()} of {filteredPoints.length.toLocaleString()} visible point{ownShareable.length === 1 ? " is" : "s are"} still private. Sharing makes them visible to other companies in your community tier.
+                        </p>
+                      </div>
+                      <Button
+                        onClick={onBulkShare}
+                        disabled={bulkSharing}
+                        className="rounded-2xl px-4 py-3"
+                      >
+                        <Upload size={15} className="mr-2" />
+                        {bulkSharing ? "Sharing..." : `Share ${ownShareable.length.toLocaleString()}`}
+                      </Button>
+                    </CardContent>
+                    {bulkShareMessage && (
+                      <div className="mx-4 mb-4 rounded-2xl bg-white p-3 text-xs font-semibold text-blue-900 ring-1 ring-blue-200">
+                        {bulkShareMessage}
+                      </div>
+                    )}
+                  </Card>
+                );
+              })()}
+
               <div>
                 <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">
                   {filteredPoints.length.toLocaleString()} of {points.length.toLocaleString()} loaded points
