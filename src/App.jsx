@@ -58,7 +58,7 @@ import {
   listPointObservations,
   onAuthChange,
   shareCompanyPointToCommunity,
-  shareCompanyPointsBulk,
+  shareAllCompanyPoints,
 } from "@/lib/companyAccounts";
 import {
   cleanupCompanyDuplicatePoints,
@@ -1341,6 +1341,8 @@ export default function SurveyPointAppPrototype() {
       lastFound: row.last_found || "",
       description: row.description || "",
       distanceFeet: typeof row.distance_feet === "number" ? row.distance_feet : Number(row.distance_feet),
+      visibility: row.visibility,
+      access_level: row.access_level,
       observations: [],
       photos: [],
     }));
@@ -2009,20 +2011,18 @@ export default function SurveyPointAppPrototype() {
                 />
               )}
 
-              {(() => {
-                const ownShareable = filteredPoints.filter(
+              {activeCompany?.id && (() => {
+                const loadedPrivate = filteredPoints.filter(
                   (p) => (p.access_level === "full" || !p.access_level) && p.visibility !== "community" && p.dbId,
                 );
-                if (ownShareable.length === 0) return null;
-                const onBulkShare = async () => {
-                  if (!window.confirm(`Share ${ownShareable.length} point${ownShareable.length === 1 ? "" : "s"} to the community pool? Other companies in your community tier will see them. This can't be undone individually — you'd have to unshare each point manually later.`)) {
+                const onShareAll = async () => {
+                  if (!window.confirm("Share ALL of your company's points to the community pool — including ones not loaded on this screen? Every private point your company owns becomes visible to other companies in your community tier. This can't be undone in bulk; you'd have to unshare points individually later.")) {
                     return;
                   }
                   setBulkSharing(true);
                   setBulkShareMessage("");
                   try {
-                    const ids = ownShareable.map((p) => p.dbId);
-                    const result = await shareCompanyPointsBulk(ids);
+                    const result = await shareAllCompanyPoints(activeCompany.id);
                     setBulkShareMessage(`Shared ${result.shared}${result.failed ? `, failed ${result.failed}` : ""}. Reloading...`);
                     await loadNearbyPoints();
                   } catch (err) {
@@ -2035,18 +2035,20 @@ export default function SurveyPointAppPrototype() {
                   <Card className="rounded-3xl border border-blue-200 bg-blue-50 shadow-sm">
                     <CardContent className="flex flex-col gap-3 p-4 md:flex-row md:items-center md:justify-between">
                       <div className="text-sm leading-6 text-blue-950">
-                        <div className="font-bold">Share visible points to community</div>
+                        <div className="font-bold">Share all my points to community</div>
                         <p className="text-xs">
-                          {ownShareable.length.toLocaleString()} of {filteredPoints.length.toLocaleString()} visible point{ownShareable.length === 1 ? " is" : "s are"} still private. Sharing makes them visible to other companies in your community tier.
+                          {loadedPrivate.length > 0
+                            ? `${loadedPrivate.length.toLocaleString()} of ${filteredPoints.length.toLocaleString()} loaded points are still private. This shares every private point your company owns — not just the ones loaded here.`
+                            : "Shares every private point your company owns to the community pool, even ones not loaded on this screen."}
                         </p>
                       </div>
                       <Button
-                        onClick={onBulkShare}
+                        onClick={onShareAll}
                         disabled={bulkSharing}
                         className="rounded-2xl px-4 py-3"
                       >
                         <Upload size={15} className="mr-2" />
-                        {bulkSharing ? "Sharing..." : `Share ${ownShareable.length.toLocaleString()}`}
+                        {bulkSharing ? "Sharing..." : "Share all my points"}
                       </Button>
                     </CardContent>
                     {bulkShareMessage && (

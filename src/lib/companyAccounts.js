@@ -129,6 +129,15 @@ export async function shareCompanyPointsBulk(companyPointIds) {
   return data || { shared: 0, failed: 0 };
 }
 
+export async function shareAllCompanyPoints(companyId) {
+  if (!companyId) throw new Error("No company selected.");
+  const { data, error } = await supabase.rpc("share_all_company_points", {
+    target_company_id: companyId,
+  });
+  if (error) throw error;
+  return data || { shared: 0, failed: 0 };
+}
+
 export async function removeCompanyMember({ companyId, userId }) {
   const { data, error } = await supabase.rpc("remove_company_member", {
     target_company_id: companyId,

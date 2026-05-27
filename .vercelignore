@@ -1,0 +1,22 @@
+# Vercel builds the Vite frontend in the cloud (runs npm install itself),
+# so only source + build config need to upload. Everything below is either
+# regenerable, backend-only, or local data and must not be shipped to Vercel.
+node_modules
+dist
+dist-ssr
+
+# Fly.io Python worker — deployed separately, not part of the web build
+worker
+
+# Local data, docs, scratch, and one-off scripts
+data
+docs
+scripts
+point test
+
+# Supabase migrations / edge functions are applied via the Supabase CLI
+supabase
+
+# Logs and local env
+*.log
+*.local
