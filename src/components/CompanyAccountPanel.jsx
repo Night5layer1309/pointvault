@@ -37,6 +37,7 @@ import {
   signInWithPassword,
   signOut,
   startCheckoutForCompany,
+  syncStripeQuantity,
 } from "@/lib/companyAccounts";
 
 function slugify(value) {
@@ -262,12 +263,17 @@ export function CompanySetupPanel({ session, onReady }) {
   const accept = async () => {
     if (!inviteToken.trim()) return;
     try {
-      await acceptInvite(inviteToken.trim());
+      const acceptedCompanyId = await acceptInvite(inviteToken.trim());
       const cleanUrl = new URL(window.location.href);
       cleanUrl.searchParams.delete("invite");
       window.history.replaceState({}, "", cleanUrl.toString());
       setMessage("Invite accepted.");
       await load();
+      // Bump Stripe subscription quantity so the new seat shows up on
+      // the next invoice. Non-blocking; the membership is already saved.
+      if (acceptedCompanyId) {
+        syncStripeQuantity(acceptedCompanyId);
+      }
     } catch (error) {
       setMessage(error.message || "Could not accept invite.");
     }
@@ -533,6 +539,10 @@ export function TeamPanel({ company, membership }) {
     try {
       await removeCompanyMember({ companyId: company.id, userId: row.user_id });
       await load();
+      // Drop Stripe subscription quantity by one (next invoice will
+      // prorate). Fire-and-forget; the member is already gone from the
+      // DB.
+      syncStripeQuantity(company.id);
     } catch (error) {
       setMessage(error.message || "Could not remove member.");
     } finally {

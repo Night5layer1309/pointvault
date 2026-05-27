@@ -138,6 +138,22 @@ export async function removeCompanyMember({ companyId, userId }) {
   return data;
 }
 
+export async function syncStripeQuantity(companyId) {
+  if (!companyId) return null;
+  try {
+    const { data, error } = await supabase.functions.invoke("sync-stripe-quantity", {
+      body: { companyId },
+    });
+    if (error) throw error;
+    return data;
+  } catch (err) {
+    // Membership change already happened; we don't want to roll it back
+    // if the Stripe sync fails. Log and let the caller continue.
+    console.error("syncStripeQuantity failed", err);
+    return null;
+  }
+}
+
 export async function fetchCompanyMembers(companyId) {
   const { data: memberships, error } = await supabase
     .from("company_memberships")
