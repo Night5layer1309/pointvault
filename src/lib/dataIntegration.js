@@ -168,6 +168,71 @@ export function parseCsvFile(file) {
   });
 }
 
+// Read just the first few rows as raw arrays (no header assumptions) so the UI
+// can show a preview and let the user label columns.
+export function previewCsvFile(file, maxRows = 6) {
+  return new Promise((resolve, reject) => {
+    Papa.parse(file, {
+      header: false,
+      skipEmptyLines: true,
+      dynamicTyping: false,
+      worker: false,
+      preview: maxRows,
+      transform: (value) => String(value ?? "").trim(),
+      complete: (results) => {
+        const rows = (results.data || []).filter(
+          (row) => Array.isArray(row) && row.some((cell) => String(cell ?? "").trim() !== ""),
+        );
+        resolve({ rows });
+      },
+      error: (error) => reject(error),
+    });
+  });
+}
+
+// Best-effort starting mapping of field -> column index, used to pre-fill the
+// column labeller. The user can override anything before uploading.
+export function guessColumnMapping(rows = []) {
+  if (!rows.length) return { has_header: false, columns: {} };
+
+  const norm = (value) => String(value ?? "").trim().toLowerCase().replace(/[^a-z0-9]+/g, "");
+  const first = rows[0].map((cell) => String(cell ?? "").trim());
+  const headerTokens = [
+    "point", "pointid", "pt", "ptid", "pnt", "number", "name", "id",
+    "northing", "north", "n", "y", "easting", "east", "e", "x",
+    "elevation", "elev", "z", "height", "description", "desc", "descript", "note", "notes", "code",
+  ];
+  const hasHeader = first.some((cell) => headerTokens.includes(norm(cell)));
+  const columns = {};
+
+  if (hasHeader) {
+    const findIdx = (...candidates) => first.findIndex((cell) => candidates.includes(norm(cell)));
+    const assign = (field, ...candidates) => {
+      const index = findIdx(...candidates);
+      if (index >= 0) columns[field] = index;
+    };
+    assign("point", "point", "pointid", "pt", "ptid", "pnt", "number", "name", "id");
+    assign("northing", "northing", "north", "n", "y");
+    assign("easting", "easting", "east", "e", "x");
+    assign("elevation", "elevation", "elev", "z", "height");
+    assign("description", "description", "desc", "descript", "note", "notes", "code", "descr");
+  } else {
+    const numeric = (value) => Number.isFinite(Number(String(value ?? "").replace(/[^0-9.eE+-]+/g, "")));
+    const sample = rows[0];
+    columns.point = 0;
+    columns.northing = 1;
+    columns.easting = 2;
+    if (sample.length >= 5 && numeric(sample[3])) {
+      columns.elevation = 3;
+      columns.description = 4;
+    } else if (sample.length >= 4) {
+      columns.description = 3;
+    }
+  }
+
+  return { has_header: hasHeader, columns };
+}
+
 export function detectColumns(fields = []) {
   const normalized = fields.map((field) => ({
     original: field,
@@ -256,6 +321,7 @@ export async function createStorageImportJob({
   declaredEpsg,
   declaredCoordinateSystem,
   defaultVisibility,
+  columnMapping,
 }) {
   return supabase.rpc("create_storage_import_job", {
     target_company_id: companyId,
@@ -263,6 +329,7 @@ export async function createStorageImportJob({
     declared_epsg: declaredEpsg ? Number(declaredEpsg) : null,
     declared_coordinate_system: declaredCoordinateSystem || null,
     default_visibility: defaultVisibility || "company",
+    column_mapping_json: columnMapping || null,
   });
 }
 
@@ -295,6 +362,7 @@ export async function createAndUploadStorageImport({
   declaredEpsg,
   declaredCoordinateSystem,
   defaultVisibility,
+  columnMapping,
   onProgress,
 }) {
   const { data: jobData, error: jobError } = await createStorageImportJob({
@@ -303,6 +371,7 @@ export async function createAndUploadStorageImport({
     declaredEpsg,
     declaredCoordinateSystem,
     defaultVisibility,
+    columnMapping,
   });
 
   if (jobError) return { data: null, error: jobError };

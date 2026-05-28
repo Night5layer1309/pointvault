@@ -1,8 +1,10 @@
 """
 PointVault Python Storage Worker - no Supabase Python package needed
-Version: 0.3.1
-Last updated: 2026-05-17
+Version: 0.4.0
+Last updated: 2026-05-27
 Notes:
+- Honors a user-supplied column_mapping on the import job (label-the-columns
+  feature). Falls back to auto-detect when no mapping is present.
 - Automatically loads .env.worker from the project folder.
 - Uses requests instead of the Supabase Python package.
 - Downloads raw import files from Supabase Storage.
@@ -207,7 +209,39 @@ def is_marker_description(description: str) -> bool:
     return any(token in d for token in accepted_tokens)
 
 
-def read_point_rows(raw_file: Path) -> list[dict[str, str]]:
+def read_rows_with_mapping(raw_rows: list[list[str]], column_mapping: dict[str, Any]) -> list[dict[str, str]]:
+    """
+    Use the explicit column_mapping the user set in the uploader, so we map
+    columns by their labels instead of guessing the layout.
+
+    column_mapping shape: {"has_header": bool, "columns": {field: column_index}}
+    """
+    columns = (column_mapping or {}).get("columns") or {}
+    has_header = bool((column_mapping or {}).get("has_header"))
+    data_rows = raw_rows[1:] if has_header else raw_rows
+
+    def cell(raw: list[str], field: str) -> str:
+        index = columns.get(field)
+        if index is None:
+            return ""
+        return raw[index].strip() if 0 <= index < len(raw) else ""
+
+    rows: list[dict[str, str]] = []
+    for raw in data_rows:
+        rows.append(
+            {
+                "point": cell(raw, "point"),
+                "northing": cell(raw, "northing"),
+                "easting": cell(raw, "easting"),
+                "elevation": cell(raw, "elevation"),
+                "description": cell(raw, "description"),
+                "source_file": "",
+            }
+        )
+    return rows
+
+
+def read_point_rows(raw_file: Path, column_mapping: dict[str, Any] | None = None) -> list[dict[str, str]]:
     rows: list[dict[str, str]] = []
 
     with raw_file.open("r", encoding="utf-8", errors="ignore", newline="") as f:
@@ -216,6 +250,14 @@ def read_point_rows(raw_file: Path) -> list[dict[str, str]]:
 
     if not raw_rows:
         return []
+
+    # If the user labelled the columns at upload time, trust those labels.
+    if column_mapping and (column_mapping.get("columns") or {}):
+        mapped = read_rows_with_mapping(raw_rows, column_mapping)
+        for row in mapped:
+            if not row.get("source_file"):
+                row["source_file"] = raw_file.name
+        return mapped
 
     first = [cell.strip() for cell in raw_rows[0]]
     first_lower = [cell.lower() for cell in first]
@@ -297,8 +339,8 @@ def write_kml(path: Path, rows: list[dict[str, Any]]) -> None:
     path.write_text(newline.join(kml_lines) + newline, encoding="utf-8")
 
 
-def clean_point_file(raw_file: Path, output_dir: Path) -> CleanResult:
-    rows = read_point_rows(raw_file)
+def clean_point_file(raw_file: Path, output_dir: Path, column_mapping: dict[str, Any] | None = None) -> CleanResult:
+    rows = read_point_rows(raw_file, column_mapping)
 
     accepted: list[dict[str, Any]] = []
     review: list[dict[str, Any]] = []
@@ -424,6 +466,7 @@ def process_one_job(api: PointVaultApi) -> bool:
     bucket = job.get("bucket") or BUCKET
     raw_path = job["raw_storage_path"]
     prefix = job["prefix"]
+    column_mapping = job.get("column_mapping")
 
     print(f"Processing import job {job_id}")
     print(f"Downloading {raw_path}")
@@ -438,7 +481,7 @@ def process_one_job(api: PointVaultApi) -> bool:
             raw_bytes = api.download_storage_file(bucket, raw_path)
             raw_file.write_bytes(raw_bytes)
 
-            result = clean_point_file(raw_file, output_dir)
+            result = clean_point_file(raw_file, output_dir, column_mapping)
 
             processed_prefix = f"{prefix}/processed"
             accepted_path = api.upload_storage_file(

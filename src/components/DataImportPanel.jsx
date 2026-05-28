@@ -30,8 +30,21 @@ import {
   getImportJob,
   getRecentImportJobs,
   getStorageImportDownloadUrl,
+  guessColumnMapping,
   normalizeImportFileList,
+  previewCsvFile,
 } from "@/lib/dataIntegration";
+
+// Fields a column can be labelled as. point/northing/easting are required for
+// the mapping to be used; the rest are optional.
+const MAPPING_FIELDS = [
+  { key: "point", label: "Point ID" },
+  { key: "northing", label: "Northing" },
+  { key: "easting", label: "Easting" },
+  { key: "elevation", label: "Elevation" },
+  { key: "description", label: "Description" },
+];
+const REQUIRED_MAPPING_FIELDS = ["point", "northing", "easting"];
 
 function Message({ kind = "info", children }) {
   if (!children) return null;
@@ -140,9 +153,107 @@ function JobBadge({ children }) {
   );
 }
 
+function ColumnMapper({ fileName, previewRows, mapping, onChange, appliesToBatch }) {
+  const columnCount = useMemo(
+    () => previewRows.reduce((max, row) => Math.max(max, row.length), 0),
+    [previewRows],
+  );
+
+  const fieldAtColumn = (index) =>
+    Object.keys(mapping.columns).find((field) => mapping.columns[field] === index) || "";
+
+  const setColumnField = (index, field) => {
+    const nextColumns = {};
+    for (const [existingField, existingIndex] of Object.entries(mapping.columns)) {
+      if (existingIndex === index) continue; // clear whatever was on this column
+      if (existingField === field) continue; // a field can only map to one column
+      nextColumns[existingField] = existingIndex;
+    }
+    if (field) nextColumns[field] = index;
+    onChange({ ...mapping, columns: nextColumns });
+  };
+
+  const dataRows = mapping.has_header ? previewRows.slice(1) : previewRows;
+  const missingRequired = REQUIRED_MAPPING_FIELDS.filter((field) => !(field in mapping.columns));
+
+  return (
+    <div className="mt-4 rounded-3xl border border-blue-200 bg-blue-50/60 p-4">
+      <div className="flex items-center gap-2 font-black text-slate-950">
+        <FileSpreadsheet size={18} /> Label your columns
+      </div>
+      <p className="mt-1 text-xs font-semibold leading-5 text-slate-600">
+        Preview of {fileName ? <span className="font-mono">{fileName}</span> : "your file"}. Tell us
+        what each column is so points aren't wrongly rejected.
+        {appliesToBatch ? " These labels apply to every file in the batch." : ""}
+      </p>
+
+      <label className="mt-3 flex items-center gap-2 text-sm font-semibold text-slate-700">
+        <input
+          type="checkbox"
+          checked={mapping.has_header}
+          onChange={(event) => onChange({ ...mapping, has_header: event.target.checked })}
+        />
+        First row is a header (skip it)
+      </label>
+
+      <div className="mt-3 overflow-x-auto rounded-2xl border border-slate-200 bg-white">
+        <table className="border-collapse text-xs">
+          <thead>
+            <tr>
+              {Array.from({ length: columnCount }).map((_, index) => (
+                <th key={index} className="border-b-2 border-slate-200 p-1 align-top">
+                  <SelectInput
+                    value={fieldAtColumn(index)}
+                    onChange={(event) => setColumnField(index, event.target.value)}
+                    className="!px-2 !py-2 text-xs"
+                  >
+                    <option value="">Ignore</option>
+                    {MAPPING_FIELDS.map((field) => (
+                      <option key={field.key} value={field.key}>
+                        {field.label}
+                      </option>
+                    ))}
+                  </SelectInput>
+                </th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {dataRows.slice(0, 5).map((row, rowIndex) => (
+              <tr key={rowIndex}>
+                {Array.from({ length: columnCount }).map((_, colIndex) => (
+                  <td
+                    key={colIndex}
+                    className="whitespace-nowrap border-b border-slate-100 px-3 py-1 font-mono text-slate-700"
+                  >
+                    {row[colIndex] ?? ""}
+                  </td>
+                ))}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+
+      {missingRequired.length > 0 ? (
+        <div className="mt-3 rounded-2xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-900">
+          Label Point ID, Northing, and Easting to use your mapping. Until then we auto-detect
+          columns (the current behavior).
+        </div>
+      ) : (
+        <div className="mt-3 rounded-2xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs font-semibold text-emerald-800">
+          Mapping set — the worker will use your labels for this upload.
+        </div>
+      )}
+    </div>
+  );
+}
+
 export function DataImportPanel({ company, membership, defaultEpsg, defaultCoordinateSystem }) {
   const [singleFile, setSingleFile] = useState(null);
   const [batchFiles, setBatchFiles] = useState([]);
+  const [previewRows, setPreviewRows] = useState([]);
+  const [columnMapping, setColumnMapping] = useState({ has_header: false, columns: {} });
   const [declaredEpsg, setDeclaredEpsg] = useState(defaultEpsg || "2238");
   const [declaredCoordinateSystem, setDeclaredCoordinateSystem] = useState(
     defaultCoordinateSystem || "NAD83 / Florida North (ftUS)",
@@ -206,6 +317,22 @@ export function DataImportPanel({ company, membership, defaultEpsg, defaultCoord
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [company?.id]);
 
+  const loadPreviewFromFile = async (file) => {
+    if (!file) {
+      setPreviewRows([]);
+      setColumnMapping({ has_header: false, columns: {} });
+      return;
+    }
+    try {
+      const { rows } = await previewCsvFile(file, 6);
+      setPreviewRows(rows);
+      setColumnMapping(guessColumnMapping(rows));
+    } catch {
+      setPreviewRows([]);
+      setColumnMapping({ has_header: false, columns: {} });
+    }
+  };
+
   const handleSingleFileChange = (event) => {
     const selected = event.target.files?.[0] || null;
     setSingleFile(selected);
@@ -213,6 +340,7 @@ export function DataImportPanel({ company, membership, defaultEpsg, defaultCoord
     setUploadProgress(null);
     setMessage("");
     setError("");
+    loadPreviewFromFile(selected);
   };
 
   const handleBatchChange = (event) => {
@@ -226,6 +354,7 @@ export function DataImportPanel({ company, membership, defaultEpsg, defaultCoord
         : "",
     );
     setError(files.length === 0 ? "No CSV/TXT files were selected." : "");
+    loadPreviewFromFile(files[0]?.file || null);
   };
 
   const handleFolderChange = (event) => {
@@ -239,6 +368,7 @@ export function DataImportPanel({ company, membership, defaultEpsg, defaultCoord
         : "",
     );
     setError(files.length === 0 ? "No CSV/TXT files found in that folder." : "");
+    loadPreviewFromFile(files[0]?.file || null);
   };
 
   const uploadOneFileToStorage = async (fileItem, index = 0, total = 1) => {
@@ -250,12 +380,17 @@ export function DataImportPanel({ company, membership, defaultEpsg, defaultCoord
       percent: 0,
     });
 
+    const mappingComplete = REQUIRED_MAPPING_FIELDS.every(
+      (field) => columnMapping?.columns && field in columnMapping.columns,
+    );
+
     const { data, error: uploadError } = await createAndUploadStorageImport({
       companyId: company.id,
       file: fileItem.file || fileItem,
       declaredEpsg,
       declaredCoordinateSystem,
       defaultVisibility,
+      columnMapping: mappingComplete ? columnMapping : null,
       onProgress: (progress) => {
         setUploadProgress({
           fileIndex: index + 1,
@@ -323,6 +458,7 @@ export function DataImportPanel({ company, membership, defaultEpsg, defaultCoord
     setSingleFile(null);
     setUploadProgress(null);
     setUploadingFileName("");
+    loadPreviewFromFile(null);
     await loadRecentJobs();
     setLoading(false);
   };
@@ -369,6 +505,8 @@ export function DataImportPanel({ company, membership, defaultEpsg, defaultCoord
 
     setUploadProgress(null);
     setUploadingFileName("");
+    setBatchFiles([]);
+    loadPreviewFromFile(null);
     await loadRecentJobs();
     setLoading(false);
   };
@@ -539,6 +677,16 @@ export function DataImportPanel({ company, membership, defaultEpsg, defaultCoord
               </div>
             </label>
           </div>
+
+          {previewRows.length > 0 && (
+            <ColumnMapper
+              fileName={singleFile?.name || batchFiles[0]?.name}
+              previewRows={previewRows}
+              mapping={columnMapping}
+              onChange={setColumnMapping}
+              appliesToBatch={selectedBatchFiles}
+            />
+          )}
 
           {selectedBatchFiles && (
             <div className="mt-4 rounded-3xl border border-slate-200 bg-white p-4">
