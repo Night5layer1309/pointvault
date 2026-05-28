@@ -16,7 +16,35 @@ if (sentryDsn) {
   })
 }
 
-registerSW({ immediate: true })
+registerSW({
+  immediate: true,
+  onRegisteredSW(_swUrl, registration) {
+    if (!registration) return
+    const check = () => { registration.update().catch(() => {}) }
+    setInterval(check, 30 * 60 * 1000)
+    document.addEventListener('visibilitychange', () => {
+      if (document.visibilityState === 'visible') check()
+    })
+  },
+})
+
+let reloadScheduled = false
+const reloadWhenSafe = () => {
+  if (reloadScheduled) return
+  reloadScheduled = true
+  if (document.hidden) {
+    window.location.reload()
+    return
+  }
+  const onHide = () => {
+    if (document.visibilityState === 'hidden') {
+      document.removeEventListener('visibilitychange', onHide)
+      window.location.reload()
+    }
+  }
+  document.addEventListener('visibilitychange', onHide)
+}
+navigator.serviceWorker?.addEventListener('controllerchange', reloadWhenSafe)
 
 const AppShell = sentryDsn
   ? Sentry.withErrorBoundary(App, {
