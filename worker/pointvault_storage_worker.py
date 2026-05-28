@@ -1,8 +1,11 @@
 """
 PointVault Python Storage Worker - no Supabase Python package needed
-Version: 0.4.0
+Version: 0.4.1
 Last updated: 2026-05-27
 Notes:
+- Smarter monument filter: recognizes AXLE and more monument types, and a real
+  marker code (IR/CIR/NID/AXLE/...) is accepted even when it sits in a tree,
+  fence, or under EOC. Location words no longer veto valid markers.
 - Honors a user-supplied column_mapping on the import job (label-the-columns
   feature). Falls back to auto-detect when no mapping is present.
 - Automatically loads .env.worker from the project folder.
@@ -163,50 +166,57 @@ def normalize_description(value: str) -> str:
     return str(value or "").strip().upper()
 
 
+MARKER_TOKENS = [
+    "IP",
+    "IR",
+    "CIR",
+    "REBAR",
+    "RBR",
+    "RBC",
+    "ROD",
+    "PIPE",
+    "CM",
+    "CONC MON",
+    "CONCRETE MONUMENT",
+    "MON",
+    "NID",
+    "PRM",
+    "MAG",
+    "PK",
+    "NAIL",
+    "60D",
+    "SPIKE",
+    "RR SPIKE",
+    "RRSPIKE",
+    "AXLE",
+    "HUB",
+    "LWH",
+    "DISK",
+    "DISC",
+    "BRASS",
+    "X CUT",
+    "XCUT",
+    "BM",
+    "BENCH",
+    "TBM",
+    "CONTROL",
+]
+
+
 def is_marker_description(description: str) -> bool:
     """
-    Starter matcher only. Replace/expand with your existing Python rules.
+    Decide whether a row describes a real survey monument worth keeping.
+
+    A recognized monument code (IR, CIR, NID, AXLE, ...) wins even when the
+    description also says *where* it sits -- "IN TREE", "IN OAK", "ON FENCE",
+    "UNDER EOC" are locations, not reasons to drop the point. Rows with no
+    recognized monument code fall through to review (this still filters out
+    topo shots, house corners, utilities, and anything unfamiliar).
     """
     d = normalize_description(description)
-    accepted_tokens = [
-        "IP",
-        "IR",
-        "CIR",
-        "CM",
-        "CONC MON",
-        "CONCRETE MONUMENT",
-        "NID",
-        "PRM",
-        "MAG",
-        "PK",
-        "NAIL",
-        "60D",
-        "HUB",
-        "LWH",
-        "BM",
-        "BENCH",
-        "CONTROL",
-    ]
-    rejected_tokens = [
-        "HOUSE",
-        "BUILDING",
-        "EOC",
-        "EDGE OF CONC",
-        "EDGE CONCRETE",
-        "TREE",
-        "OAK",
-        "PINE",
-        "FENCE",
-        "POWER POLE",
-        "WATER METER",
-        "VALVE",
-        "MANHOLE",
-        "TOPO",
-    ]
-
-    if any(token in d for token in rejected_tokens):
+    if not d:
         return False
-    return any(token in d for token in accepted_tokens)
+    return any(token in d for token in MARKER_TOKENS)
 
 
 def read_rows_with_mapping(raw_rows: list[list[str]], column_mapping: dict[str, Any]) -> list[dict[str, str]]:
