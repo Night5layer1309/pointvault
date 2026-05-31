@@ -1,0 +1,168 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Privacy Policy — PointVault</title>
+  <meta name="description" content="How PointVault collects, uses, and shares information." />
+  <meta name="robots" content="index, follow" />
+  <link rel="icon" href="/favicon.svg" />
+  <style>
+    :root { --navy: #1e2952; --ink: #0f172a; --muted: #475569; --line: #e2e8f0; --bg: #f1f5f9; }
+    * { box-sizing: border-box; }
+    body { margin: 0; background: var(--bg); color: var(--ink);
+      font-family: system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif; line-height: 1.6; }
+    header { background: var(--navy); color: #fff; padding: 28px 20px; }
+    .wrap { max-width: 820px; margin: 0 auto; padding: 0 20px; }
+    header .wrap { display: flex; align-items: center; gap: 14px; }
+    header img { width: 44px; height: 44px; border-radius: 12px; }
+    header h1 { font-size: 22px; margin: 0; font-weight: 800; }
+    header p { margin: 2px 0 0; opacity: .8; font-size: 13px; }
+    main { padding: 32px 0 64px; }
+    main .wrap > p.effective { color: var(--muted); font-size: 13px; margin-top: 0; }
+    h2 { font-size: 18px; margin: 32px 0 8px; color: var(--navy); }
+    h3 { font-size: 15px; margin: 20px 0 6px; }
+    p, li { font-size: 15px; color: #1e293b; }
+    ul { padding-left: 22px; }
+    a { color: #2563eb; }
+    .card { background: #fff; border: 1px solid var(--line); border-radius: 16px; padding: 8px 24px 24px; margin-top: 20px; }
+    footer { border-top: 1px solid var(--line); padding: 24px 0; color: var(--muted); font-size: 13px; }
+    code { background: #e2e8f0; padding: 1px 6px; border-radius: 6px; font-size: 13px; }
+  </style>
+</head>
+<body>
+  <header>
+    <div class="wrap">
+      <img src="/icon-192.png" alt="PointVault" />
+      <div>
+        <h1>PointVault Privacy Policy</h1>
+        <p>How we collect, use, and share information</p>
+      </div>
+    </div>
+  </header>
+
+  <main>
+    <div class="wrap">
+      <p class="effective">Effective date: May 31, 2026</p>
+
+      <div class="card">
+        <h2>1. Overview</h2>
+        <p>PointVault ("PointVault," "we," "us") is a field-surveying companion application that lets surveying
+          companies and their crews import, view, search, and selectively share survey point data. This policy explains
+          what information we collect, how we use it, who we share it with, and the choices you have. It applies to the
+          PointVault web app and the PointVault Android app, both of which use the same service at
+          <code>pointvault.app</code>.</p>
+
+        <h2>2. Information we collect</h2>
+
+        <h3>Information you provide</h3>
+        <ul>
+          <li><strong>Account information</strong> — the email address you sign in with, and (optionally) a password you set.
+            Your account is associated with a company workspace.</li>
+          <li><strong>Survey and project data</strong> — point coordinates, point IDs, descriptions, job numbers, source
+            file names, status, and similar attributes you import or enter, plus any <strong>field notes</strong> you add.</li>
+          <li><strong>Support communications</strong> — information you send us when you contact us for help.</li>
+        </ul>
+
+        <h3>Information collected automatically</h3>
+        <ul>
+          <li><strong>Device location</strong> — if you grant permission, the app reads your device's GPS location to center
+            the map on your position ("You Are Here") and to find points near you. Location is used to provide these
+            features; it is not used for advertising and is not sold.</li>
+          <li><strong>Diagnostics and crash data</strong> — we use Sentry to capture error reports and limited diagnostic
+            information when the app crashes or misbehaves, including a limited session replay that may be recorded around
+            an error, to help us fix problems.</li>
+          <li><strong>Usage and device data</strong> — basic technical information such as browser/app type and IP address,
+            which is processed by our hosting and map-tile providers to deliver the service.</li>
+          <li><strong>Local storage</strong> — we store your sign-in session and some preferences (such as theme and default
+            map settings) in your browser/device storage so the app works and remembers your choices.</li>
+        </ul>
+
+        <h3>Payment information</h3>
+        <p>If your company subscribes to a paid plan, payments are processed by <strong>Stripe</strong>. Your full card
+          details are entered with and held by Stripe; PointVault does not receive or store your full card number.</p>
+
+        <h2>3. How we use information</h2>
+        <ul>
+          <li>To provide, operate, and maintain the app and your company workspace.</li>
+          <li>To authenticate you, including sending sign-in (magic-link) and account emails.</li>
+          <li>To display the map, locate you, and surface nearby and shared points.</li>
+          <li>To process imports and run de-duplication and community-sharing features.</li>
+          <li>To monitor, debug, secure, and improve the service.</li>
+          <li>To process subscription billing and send related account/administrative notices.</li>
+          <li>To comply with legal obligations and enforce our terms.</li>
+        </ul>
+
+        <h2>4. How information is shared</h2>
+        <h3>Community sharing (a core feature you control)</h3>
+        <p>Points you import are <strong>private to your company by default</strong>. If you choose to share a point to the
+          PointVault community, its coordinates and attributes become viewable by other contributing companies through the
+          app, deduplicated against nearby contributions. Field notes you leave on community points are attributed to your
+          company and user account and are visible to other companies with full community access. Points you do not share
+          remain visible only to your own company.</p>
+
+        <h3>Service providers</h3>
+        <p>We share information with vendors that operate the service on our behalf, under agreements that limit their use
+          of the data:</p>
+        <ul>
+          <li><strong>Supabase</strong> — authentication, database, and storage (hosts your account and survey data).</li>
+          <li><strong>Vercel</strong> — web application hosting.</li>
+          <li><strong>Fly.io</strong> — background import-processing worker.</li>
+          <li><strong>Stripe</strong> — subscription payment processing.</li>
+          <li><strong>Sentry</strong> — error and crash diagnostics.</li>
+          <li><strong>Resend</strong> — transactional and account email delivery.</li>
+          <li><strong>Map-tile providers</strong> (Esri/ArcGIS, CARTO, and the USGS National Map) — serve basemap imagery;
+            they receive request data such as your IP address and the map area being viewed.</li>
+        </ul>
+
+        <h3>Legal and safety</h3>
+        <p>We may disclose information if required by law or to protect the rights, safety, and security of PointVault, our
+          users, or the public.</p>
+
+        <h3>No sale of personal information</h3>
+        <p>We do not sell your personal information, and we do not use it for cross-context behavioral advertising.</p>
+
+        <h2>5. Data retention</h2>
+        <p>We retain account and survey data for as long as your account/company workspace is active or as needed to provide
+          the service. Diagnostic data is retained for a limited period. You may request deletion as described below;
+          note that points already shared to the community and append-only field notes may persist in aggregated community
+          records after your account is closed.</p>
+
+        <h2>6. Security</h2>
+        <p>We use industry-standard measures including encryption in transit (HTTPS) and access controls. No method of
+          transmission or storage is perfectly secure, but we work to protect your information.</p>
+
+        <h2>7. Your choices and rights</h2>
+        <ul>
+          <li><strong>Location</strong> — you can grant or revoke location permission at any time in your device or browser
+            settings. The app works without location; you simply won't get GPS centering.</li>
+          <li><strong>Access, correction, deletion</strong> — you may request a copy of your data, corrections, or deletion
+            of your account by contacting us at the address below.</li>
+          <li><strong>Marketing</strong> — we do not send marketing email; account and sign-in emails are required to use
+            the service.</li>
+        </ul>
+
+        <h2>8. Children</h2>
+        <p>PointVault is a tool for professional surveying work and is not directed to children. We do not knowingly collect
+          personal information from children under 13.</p>
+
+        <h2>9. Where your data is processed</h2>
+        <p>PointVault is operated in the United States, and your information is processed and stored on servers located in
+          the United States by the providers listed above.</p>
+
+        <h2>10. Changes to this policy</h2>
+        <p>We may update this policy from time to time. When we do, we will revise the "Effective date" above and, for
+          material changes, provide notice within the app.</p>
+
+        <h2>11. Contact us</h2>
+        <p>Questions about this policy or your data? Contact us at
+          <a href="mailto:support@pointvault.app">support@pointvault.app</a>.</p>
+      </div>
+
+      <footer class="wrap">
+        <p>© 2026 PointVault. See also our <a href="/">app</a>. This policy describes the service's current data practices.</p>
+      </footer>
+    </div>
+  </main>
+</body>
+</html>

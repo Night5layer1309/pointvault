@@ -423,6 +423,16 @@ function SettingsBody({ theme, onThemeChange, defaultBasemap, onDefaultBasemapCh
 function LegalBody() {
   return (
     <div className="space-y-4 text-sm leading-6 text-slate-700 dark:text-slate-300">
+      <a
+        href="/privacy.html"
+        target="_blank"
+        rel="noopener noreferrer"
+        className="flex items-center justify-between rounded-2xl border border-blue-200 bg-blue-50 p-4 font-bold text-blue-900 dark:border-blue-800 dark:bg-blue-950 dark:text-blue-200"
+      >
+        <span>Privacy Policy</span>
+        <span className="text-xs font-semibold underline">View full policy →</span>
+      </a>
+
       <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4 text-amber-900 dark:border-amber-700 dark:bg-amber-950 dark:text-amber-200">
         <div className="font-black">Placeholder language — have a lawyer review before relying on it.</div>
         <p className="mt-1 text-xs">Replace this entire panel with text reviewed by counsel before onboarding outside companies.</p>
