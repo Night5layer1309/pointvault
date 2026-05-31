@@ -17,6 +17,11 @@ point test
 # Supabase migrations / edge functions are applied via the Supabase CLI
 supabase
 
+# Android/Play package + signing artifacts — backend/build-only, never ship to web
+PointVault - Google Play package
+*.keystore
+*.jks
+
 # Logs and local env
 *.log
 *.local
