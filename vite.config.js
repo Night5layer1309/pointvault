@@ -12,9 +12,11 @@ export default defineConfig({
       registerType: 'autoUpdate',
       includeAssets: ['favicon-32.png', 'apple-touch-icon.png'],
       manifest: {
+        id: '/',
         name: 'PointVault',
         short_name: 'PointVault',
         description: 'Field surveying companion for shared survey point data.',
+        categories: ['productivity', 'utilities'],
         theme_color: '#1e2952',
         background_color: '#1e2952',
         display: 'standalone',
