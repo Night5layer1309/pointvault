@@ -33,7 +33,7 @@ export default defineConfig({
       workbox: {
         navigateFallback: '/index.html',
         // Public, no-login pages (and asset-links) must hit the network, not the SPA shell
-        navigateFallbackDenylist: [/^\/privacy/, /^\/terms/, /^\/\.well-known\//],
+        navigateFallbackDenylist: [/^\/privacy/, /^\/terms/, /^\/delete-account/, /^\/\.well-known\//],
         runtimeCaching: [
           {
             urlPattern: ({ url }) =>
