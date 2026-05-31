@@ -5,7 +5,7 @@
       "namespace": "android_app",
       "package_name": "app.pointvault.twa",
       "sha256_cert_fingerprints": [
-        "REPLACE_WITH_PLAY_APP_SIGNING_SHA256",
+        "5C:52:BE:B0:4E:7F:9A:BC:D1:B8:8B:34:4E:5F:82:A4:50:D1:CA:0D:69:A0:78:00:DA:24:4D:09:A1:8E:8E:2A",
         "B8:7A:BB:BD:02:62:97:9E:8F:57:05:C3:62:58:A7:58:3A:48:CC:40:50:A5:C2:E9:71:54:97:37:CD:F4:6D:EF"
       ]
     }
