@@ -27,12 +27,15 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import {
   createAndUploadStorageImport,
+  fetchStorageCsvRows,
   getImportJob,
   getRecentImportJobs,
   getStorageImportDownloadUrl,
   guessColumnMapping,
   normalizeImportFileList,
   previewCsvFile,
+  promoteImportRows,
+  requeueStorageImportJob,
 } from "@/lib/dataIntegration";
 
 // Fields a column can be labelled as. point/northing/easting are required for
@@ -285,6 +288,13 @@ export function DataImportPanel({ company, membership, defaultEpsg, defaultCoord
 
   const [recentJobs, setRecentJobs] = useState([]);
   const [activeJob, setActiveJob] = useState(null);
+
+  // Approve-without-reupload state (Phase 1 re-run + Phase 2 review picker).
+  const [rerunBusy, setRerunBusy] = useState(false);
+  const [reviewRows, setReviewRows] = useState(null); // null = not loaded
+  const [reviewLoading, setReviewLoading] = useState(false);
+  const [selectedReview, setSelectedReview] = useState(() => new Set());
+  const [reviewMessage, setReviewMessage] = useState("");
 
   const [loading, setLoading] = useState(false);
   const [uploadingFileName, setUploadingFileName] = useState("");
@@ -557,9 +567,16 @@ export function DataImportPanel({ company, membership, defaultEpsg, defaultCoord
     setLoading(false);
   };
 
+  const resetReviewState = () => {
+    setReviewRows(null);
+    setSelectedReview(new Set());
+    setReviewMessage("");
+  };
+
   const openJob = async (job) => {
     setActiveJob(job);
     setError("");
+    resetReviewState();
 
     const { data, error: jobError } = await getImportJob(job.id);
 
@@ -601,6 +618,101 @@ export function DataImportPanel({ company, membership, defaultEpsg, defaultCoord
     if (data?.signedUrl) {
       window.open(data.signedUrl, "_blank");
     }
+  };
+
+  // Phase 1: re-run the worker on the already-uploaded file, importing every
+  // located row (skips the monument filter). No re-upload.
+  const rerunImportAll = async (job) => {
+    if (!job?.id) return;
+    const ok = window.confirm(
+      "Re-run this import and bring in EVERY located point (accepted + review), " +
+        "skipping the monument-code filter? Your already-uploaded file is reused — no re-upload.",
+    );
+    if (!ok) return;
+
+    setRerunBusy(true);
+    setError("");
+    resetReviewState();
+    const { error: requeueError } = await requeueStorageImportJob(job.id, true);
+    setRerunBusy(false);
+
+    if (requeueError) {
+      setError(requeueError.message || "Could not re-queue the import.");
+      return;
+    }
+
+    setMessage("Re-queued. The worker will reprocess your file and import all located points shortly. Use Refresh Job to watch.");
+    await refreshActiveJob();
+  };
+
+  // Phase 2: load the review rows (valid coords, no recognized monument code)
+  // so the user can approve individual ones.
+  const loadReviewRows = async (job) => {
+    if (!job?.review_storage_path) {
+      setReviewMessage("No review file for this job.");
+      setReviewRows([]);
+      return;
+    }
+    setReviewLoading(true);
+    setReviewMessage("");
+    const { rows, error: reviewError } = await fetchStorageCsvRows(job.review_storage_path);
+    setReviewLoading(false);
+
+    if (reviewError) {
+      setReviewMessage(reviewError.message || "Could not load review rows.");
+      setReviewRows([]);
+      return;
+    }
+
+    setReviewRows(rows);
+    setSelectedReview(new Set(rows.map((_, index) => index)));
+  };
+
+  const toggleReviewRow = (index) => {
+    setSelectedReview((prev) => {
+      const next = new Set(prev);
+      if (next.has(index)) next.delete(index);
+      else next.add(index);
+      return next;
+    });
+  };
+
+  const toggleAllReview = () => {
+    setSelectedReview((prev) =>
+      prev.size === (reviewRows?.length || 0) ? new Set() : new Set((reviewRows || []).map((_, i) => i)),
+    );
+  };
+
+  const approveSelectedReview = async (job) => {
+    if (!job?.id || !reviewRows?.length) return;
+    const chosen = reviewRows.filter((_, index) => selectedReview.has(index));
+    if (chosen.length === 0) {
+      setReviewMessage("Select at least one row to approve.");
+      return;
+    }
+
+    setReviewLoading(true);
+    setReviewMessage(`Approving ${chosen.length.toLocaleString()} point(s)...`);
+    const { data, error: promoteError } = await promoteImportRows(job.id, chosen);
+    setReviewLoading(false);
+
+    if (promoteError) {
+      setReviewMessage(promoteError.message || "Could not approve the selected rows.");
+      return;
+    }
+
+    const inserted = Number(data?.inserted_points || 0);
+    const skipped = Number(data?.skipped_points || 0);
+    // Drop the approved rows from the list so they don't show again this session.
+    const remaining = reviewRows.filter((_, index) => !selectedReview.has(index));
+    setReviewRows(remaining);
+    setSelectedReview(new Set(remaining.map((_, i) => i)));
+    setReviewMessage(
+      `Approved ${inserted.toLocaleString()} point(s)${
+        skipped ? `, ${skipped.toLocaleString()} skipped as duplicates` : ""
+      }. They're now in your company points.`,
+    );
+    await refreshActiveJob();
   };
 
   return (
@@ -1023,6 +1135,118 @@ export function DataImportPanel({ company, membership, defaultEpsg, defaultCoord
                 <Download size={16} className="mr-2" /> Summary JSON
               </Button>
             </div>
+
+            {activeJob.import_mode === "storage_python" && activeJob.raw_storage_path && canImport && (
+              <div className="mt-5 rounded-3xl border border-slate-200 bg-white p-4">
+                <div className="font-black text-slate-950">Approve points that didn't auto-import</div>
+                <p className="mt-1 text-xs font-semibold leading-5 text-slate-500">
+                  "Review" rows have valid coordinates but no recognized monument code. Approve them
+                  without re-uploading — your original file is still in cloud storage. (Rows in
+                  "Rejected" have no usable coordinates and need the data fixed + re-uploaded.)
+                </p>
+
+                <div className="mt-3 flex flex-wrap gap-2">
+                  <Button
+                    type="button"
+                    onClick={() => rerunImportAll(activeJob)}
+                    disabled={rerunBusy}
+                    className="rounded-2xl px-4 py-3"
+                  >
+                    {rerunBusy ? (
+                      <Loader2 size={16} className="mr-2 animate-spin" />
+                    ) : (
+                      <RefreshCw size={16} className="mr-2" />
+                    )}
+                    Re-run &amp; import all located points
+                  </Button>
+
+                  <Button
+                    type="button"
+                    onClick={() => loadReviewRows(activeJob)}
+                    disabled={reviewLoading || !activeJob.review_storage_path}
+                    variant="secondary"
+                    className="rounded-2xl px-4 py-3"
+                  >
+                    {reviewLoading ? (
+                      <Loader2 size={16} className="mr-2 animate-spin" />
+                    ) : (
+                      <CheckCircle2 size={16} className="mr-2" />
+                    )}
+                    Review &amp; approve individually
+                  </Button>
+                </div>
+
+                {reviewMessage && (
+                  <div className="mt-3">
+                    <Message kind="info">{reviewMessage}</Message>
+                  </div>
+                )}
+
+                {reviewRows && reviewRows.length > 0 && (
+                  <div className="mt-3">
+                    <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+                      <button
+                        type="button"
+                        onClick={toggleAllReview}
+                        className="text-xs font-bold uppercase tracking-wide text-blue-700 underline"
+                      >
+                        {selectedReview.size === reviewRows.length ? "Clear all" : "Select all"}
+                      </button>
+                      <Button
+                        type="button"
+                        onClick={() => approveSelectedReview(activeJob)}
+                        disabled={reviewLoading || selectedReview.size === 0}
+                        className="rounded-2xl px-4 py-2"
+                      >
+                        <CheckCircle2 size={15} className="mr-2" />
+                        Approve selected ({selectedReview.size.toLocaleString()})
+                      </Button>
+                    </div>
+
+                    <div className="max-h-72 overflow-auto rounded-2xl border border-slate-200">
+                      <table className="w-full text-left text-xs">
+                        <thead className="sticky top-0 bg-slate-100 font-black text-slate-700">
+                          <tr>
+                            <th className="px-2 py-2"> </th>
+                            <th className="px-2 py-2">Point</th>
+                            <th className="px-2 py-2">Description</th>
+                            <th className="px-2 py-2">Location</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {reviewRows.map((row, index) => {
+                            const loc = row.latitude && row.longitude
+                              ? `${row.latitude}, ${row.longitude}`
+                              : `${row.northing || "?"} / ${row.easting || "?"}`;
+                            return (
+                              <tr key={index} className="border-t border-slate-100 odd:bg-white even:bg-slate-50">
+                                <td className="px-2 py-2">
+                                  <input
+                                    type="checkbox"
+                                    className="h-4 w-4"
+                                    checked={selectedReview.has(index)}
+                                    onChange={() => toggleReviewRow(index)}
+                                  />
+                                </td>
+                                <td className="px-2 py-2 font-semibold text-slate-800">{row.point || "—"}</td>
+                                <td className="px-2 py-2 text-slate-600">{row.description || "—"}</td>
+                                <td className="px-2 py-2 font-mono text-slate-500">{loc}</td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                )}
+
+                {reviewRows && reviewRows.length === 0 && !reviewLoading && (
+                  <div className="mt-3 text-xs font-semibold text-slate-500">
+                    No review rows to approve for this job.
+                  </div>
+                )}
+              </div>
+            )}
           </CardContent>
         </Card>
       )}

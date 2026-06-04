@@ -410,6 +410,51 @@ export async function getStorageImportDownloadUrl(path, bucket = IMPORT_BUCKET, 
   return supabase.storage.from(bucket).createSignedUrl(path, expiresIn);
 }
 
+// Re-run the worker on a file already in storage (no re-upload). With
+// skipMarkerFilter true it imports every located row (accepted + review).
+export async function requeueStorageImportJob(importJobId, skipMarkerFilter = true) {
+  return supabase.rpc("requeue_storage_import_job", {
+    target_import_job_id: importJobId,
+    skip_marker_filter_in: Boolean(skipMarkerFilter),
+  });
+}
+
+// Fetch + parse one of a job's processed CSVs (e.g. review_points.csv) into row
+// objects keyed by header (point, northing, easting, elevation, latitude,
+// longitude, description, source_file).
+export async function fetchStorageCsvRows(path, bucket = IMPORT_BUCKET) {
+  const { data, error } = await getStorageImportDownloadUrl(path, bucket);
+  if (error) return { rows: [], error };
+
+  try {
+    const response = await fetch(data.signedUrl);
+    if (!response.ok) {
+      return { rows: [], error: { message: `Could not download file (${response.status}).` } };
+    }
+    const text = await response.text();
+    const parsed = Papa.parse(text, {
+      header: true,
+      skipEmptyLines: true,
+      transformHeader: (header) => String(header ?? "").trim().toLowerCase(),
+      transform: (value) => String(value ?? "").trim(),
+    });
+    const rows = (parsed.data || []).filter((row) =>
+      row && Object.values(row).some((cell) => String(cell ?? "").trim() !== ""),
+    );
+    return { rows, error: null };
+  } catch (fetchError) {
+    return { rows: [], error: { message: fetchError?.message || "Could not read file." } };
+  }
+}
+
+// Promote a user-selected set of rows (approved review rows) into company_points.
+export async function promoteImportRows(importJobId, rows) {
+  return supabase.rpc("promote_storage_import_rows", {
+    target_import_job_id: importJobId,
+    points_json: rows,
+  });
+}
+
 export async function listImportStorageFiles(prefix, bucket = IMPORT_BUCKET) {
   return supabase.storage.from(bucket).list(prefix, {
     limit: 100,
