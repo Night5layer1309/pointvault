@@ -1,0 +1,3 @@
+point	northing	easting	description
+1	620100.50	1645200.10	IR
+2	620150.25	1645260.80	CIR

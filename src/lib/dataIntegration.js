@@ -322,6 +322,7 @@ export async function createStorageImportJob({
   declaredCoordinateSystem,
   defaultVisibility,
   columnMapping,
+  skipMarkerFilter,
 }) {
   return supabase.rpc("create_storage_import_job", {
     target_company_id: companyId,
@@ -330,6 +331,7 @@ export async function createStorageImportJob({
     declared_coordinate_system: declaredCoordinateSystem || null,
     default_visibility: defaultVisibility || "company",
     column_mapping_json: columnMapping || null,
+    skip_marker_filter_in: Boolean(skipMarkerFilter),
   });
 }
 
@@ -363,6 +365,7 @@ export async function createAndUploadStorageImport({
   declaredCoordinateSystem,
   defaultVisibility,
   columnMapping,
+  skipMarkerFilter,
   onProgress,
 }) {
   const { data: jobData, error: jobError } = await createStorageImportJob({
@@ -372,6 +375,7 @@ export async function createAndUploadStorageImport({
     declaredCoordinateSystem,
     defaultVisibility,
     columnMapping,
+    skipMarkerFilter,
   });
 
   if (jobError) return { data: null, error: jobError };

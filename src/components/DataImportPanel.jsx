@@ -249,15 +249,38 @@ function ColumnMapper({ fileName, previewRows, mapping, onChange, appliesToBatch
   );
 }
 
+const REMEMBERED_EPSG_KEY = "pv_import_epsg";
+const REMEMBERED_CS_KEY = "pv_import_cs";
+
+function readRemembered(key, fallback) {
+  try {
+    const value = window.localStorage.getItem(key);
+    return value != null && value !== "" ? value : fallback;
+  } catch {
+    return fallback;
+  }
+}
+
 export function DataImportPanel({ company, membership, defaultEpsg, defaultCoordinateSystem }) {
   const [singleFile, setSingleFile] = useState(null);
   const [batchFiles, setBatchFiles] = useState([]);
   const [previewRows, setPreviewRows] = useState([]);
   const [columnMapping, setColumnMapping] = useState({ has_header: false, columns: {} });
-  const [declaredEpsg, setDeclaredEpsg] = useState(defaultEpsg || "2238");
-  const [declaredCoordinateSystem, setDeclaredCoordinateSystem] = useState(
-    defaultCoordinateSystem || "NAD83 / Florida North (ftUS)",
+  const [declaredEpsg, setDeclaredEpsg] = useState(
+    () => defaultEpsg || readRemembered(REMEMBERED_EPSG_KEY, "2238"),
   );
+  const [declaredCoordinateSystem, setDeclaredCoordinateSystem] = useState(
+    () => defaultCoordinateSystem || readRemembered(REMEMBERED_CS_KEY, "NAD83 / Florida North (ftUS)"),
+  );
+  // R1: the user must actively confirm the coordinate system before upload, so
+  // a wrong zone can't silently mislocate every point. Pre-checked only when the
+  // current EPSG matches what they last confirmed (keeps repeat imports low-friction).
+  const [coordinateConfirmed, setCoordinateConfirmed] = useState(
+    () => String(defaultEpsg || readRemembered(REMEMBERED_EPSG_KEY, "")) ===
+      readRemembered(REMEMBERED_EPSG_KEY, "__none__"),
+  );
+  // U1/U2/U6: per-upload escape hatch from the monument-code filter.
+  const [skipMarkerFilter, setSkipMarkerFilter] = useState(false);
   const [defaultVisibility, setDefaultVisibility] = useState("company");
 
   const [recentJobs, setRecentJobs] = useState([]);
@@ -293,6 +316,28 @@ export function DataImportPanel({ company, membership, defaultEpsg, defaultCoord
   );
 
   const selectedBatchFiles = batchFiles.length > 0;
+
+  // Changing the declared system forces re-confirmation (R1). Confirming
+  // remembers the choice so the same crew's next import is pre-checked.
+  const onEpsgChange = (value) => {
+    setDeclaredEpsg(value);
+    setCoordinateConfirmed(false);
+  };
+  const onCoordinateSystemChange = (value) => {
+    setDeclaredCoordinateSystem(value);
+    setCoordinateConfirmed(false);
+  };
+  const confirmCoordinate = (checked) => {
+    setCoordinateConfirmed(checked);
+    if (checked) {
+      try {
+        window.localStorage.setItem(REMEMBERED_EPSG_KEY, String(declaredEpsg || ""));
+        window.localStorage.setItem(REMEMBERED_CS_KEY, String(declaredCoordinateSystem || ""));
+      } catch {
+        /* localStorage unavailable — confirmation still applies for this session */
+      }
+    }
+  };
 
   const loadRecentJobs = async () => {
     if (!company?.id) return;
@@ -391,6 +436,7 @@ export function DataImportPanel({ company, membership, defaultEpsg, defaultCoord
       declaredCoordinateSystem,
       defaultVisibility,
       columnMapping: mappingComplete ? columnMapping : null,
+      skipMarkerFilter,
       onProgress: (progress) => {
         setUploadProgress({
           fileIndex: index + 1,
@@ -626,7 +672,7 @@ export function DataImportPanel({ company, membership, defaultEpsg, defaultCoord
                 type="button"
                 onClick={queueSingleFile}
                 className="rounded-2xl px-5 py-3"
-                disabled={!singleFile || loading || !canImport}
+                disabled={!singleFile || loading || !canImport || !coordinateConfirmed}
               >
                 {loading && singleFile ? (
                   <Loader2 size={16} className="mr-2 animate-spin" />
@@ -704,7 +750,7 @@ export function DataImportPanel({ company, membership, defaultEpsg, defaultCoord
                   type="button"
                   onClick={queueBatchFiles}
                   className="rounded-2xl px-5 py-3"
-                  disabled={loading || !canImport}
+                  disabled={loading || !canImport || !coordinateConfirmed}
                 >
                   {loading ? (
                     <Loader2 size={16} className="mr-2 animate-spin" />
@@ -735,7 +781,7 @@ export function DataImportPanel({ company, membership, defaultEpsg, defaultCoord
             <Field label="EPSG / zone">
               <TextInput
                 value={declaredEpsg}
-                onChange={(event) => setDeclaredEpsg(event.target.value)}
+                onChange={(event) => onEpsgChange(event.target.value)}
                 placeholder="2238"
               />
             </Field>
@@ -743,7 +789,7 @@ export function DataImportPanel({ company, membership, defaultEpsg, defaultCoord
             <Field label="Coordinate system name">
               <TextInput
                 value={declaredCoordinateSystem}
-                onChange={(event) => setDeclaredCoordinateSystem(event.target.value)}
+                onChange={(event) => onCoordinateSystemChange(event.target.value)}
               />
             </Field>
 
@@ -756,6 +802,52 @@ export function DataImportPanel({ company, membership, defaultEpsg, defaultCoord
                 <option value="community">Share to community after promotion</option>
               </SelectInput>
             </Field>
+          </div>
+
+          <div className="mt-4 grid gap-3">
+            <label
+              className={`flex items-start gap-3 rounded-2xl border p-3 text-sm ${
+                coordinateConfirmed
+                  ? "border-emerald-200 bg-emerald-50"
+                  : "border-amber-300 bg-amber-50"
+              }`}
+            >
+              <input
+                type="checkbox"
+                className="mt-1 h-4 w-4"
+                checked={coordinateConfirmed}
+                onChange={(event) => confirmCoordinate(event.target.checked)}
+                disabled={!canImport}
+              />
+              <span className="font-semibold text-slate-700">
+                I confirm these points are in{" "}
+                <span className="font-black text-slate-950">
+                  {declaredCoordinateSystem || "the selected system"}
+                </span>{" "}
+                (EPSG {declaredEpsg || "?"}).
+                <span className="mt-1 block text-xs font-medium text-slate-500">
+                  Required before upload. If this is wrong, every point lands in the wrong place on
+                  the map. For decimal latitude/longitude files, set EPSG to <strong>4326</strong>.
+                </span>
+              </span>
+            </label>
+
+            <label className="flex items-start gap-3 rounded-2xl border border-slate-200 bg-white p-3 text-sm">
+              <input
+                type="checkbox"
+                className="mt-1 h-4 w-4"
+                checked={skipMarkerFilter}
+                onChange={(event) => setSkipMarkerFilter(event.target.checked)}
+                disabled={!canImport}
+              />
+              <span className="font-semibold text-slate-700">
+                Import every located point (skip the monument-code filter)
+                <span className="mt-1 block text-xs font-medium text-slate-500">
+                  Turn on for coordinate-only or non-survey files. Off (default) keeps only rows with
+                  a recognized monument code (IR, CIR, REBAR…); the rest go to review.
+                </span>
+              </span>
+            </label>
           </div>
 
           <div className="mt-4 grid gap-2">
@@ -822,6 +914,29 @@ export function DataImportPanel({ company, membership, defaultEpsg, defaultCoord
               <StatCard label="Rejected" value={activeJob.rejected_rows} note="Review/reject" />
               <StatCard label="Duplicates" value={activeJob.duplicate_rows} note="Skipped" />
             </div>
+
+            {activeJob.coordinate_warning && (
+              <div className="mt-4 rounded-2xl border border-amber-300 bg-amber-50 p-3 text-sm font-bold text-amber-900">
+                ⚠️ {activeJob.coordinate_warning}
+              </div>
+            )}
+
+            {activeJob.import_centroid_lat != null && activeJob.import_centroid_lng != null && (
+              <div className="mt-3 rounded-2xl bg-slate-50 p-3 text-sm font-semibold text-slate-600">
+                Imported points center near{" "}
+                <a
+                  className="font-black text-blue-700 underline"
+                  target="_blank"
+                  rel="noreferrer"
+                  href={`https://www.google.com/maps?q=${activeJob.import_centroid_lat},${activeJob.import_centroid_lng}`}
+                >
+                  {Number(activeJob.import_centroid_lat).toFixed(5)},{" "}
+                  {Number(activeJob.import_centroid_lng).toFixed(5)}
+                </a>
+                . Open it to confirm that's the right area — if it's in the ocean or the wrong
+                state, the EPSG/zone was wrong.
+              </div>
+            )}
 
             <div className="mt-4 grid gap-2 text-sm font-semibold text-slate-600">
               <div className="rounded-2xl bg-slate-50 p-3">

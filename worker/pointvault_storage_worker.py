@@ -1,8 +1,17 @@
 """
 PointVault Python Storage Worker - no Supabase Python package needed
-Version: 0.4.1
-Last updated: 2026-05-27
+Version: 0.5.0
+Last updated: 2026-06-03
 Notes:
+- Robust parsing (v0.5.0): auto-detects comma/tab/semicolon/whitespace
+  delimiters, strips a UTF-8 BOM, tolerant number parsing (unit suffixes and
+  thousands separators), and broader header detection (X/Y/Z, lat/long, codes).
+- Latitude/longitude inputs are now first-class: a row with valid lat/long is
+  accepted even with no northing/easting. The DB transforms lat/long straight
+  to WGS84; projected northing/easting still use the job's declared EPSG.
+- skip_marker_filter (per-upload toggle): when set, every located row is
+  accepted so coordinate-only / non-survey files import in full. Default off
+  keeps the monument-code filter.
 - Smarter monument filter: recognizes AXLE and more monument types, and a real
   marker code (IR/CIR/NID/AXLE/...) is accepted even when it sits in a tree,
   fence, or under EOC. Location words no longer veto valid markers.
@@ -38,8 +47,10 @@ Important:
 from __future__ import annotations
 
 import csv
+import io
 import json
 import os
+import re
 import signal
 import tempfile
 import time
@@ -152,14 +163,70 @@ class PointVaultApi:
         return path
 
 
+_NUMERIC_CLEAN_RE = re.compile(r"[^0-9eE.+-]")
+
+
 def safe_float(value: Any) -> float | None:
-    try:
-        text = str(value).strip()
-        if not text:
-            return None
-        return float(text)
-    except Exception:
+    text = str(value).strip()
+    if not text:
         return None
+
+    # Fast path: a clean number.
+    try:
+        return float(text)
+    except (TypeError, ValueError):
+        pass
+
+    # Permissive fallback so the worker accepts what the browser preview shows
+    # as usable: strip unit suffixes ("1234.5ft"), thousands commas
+    # ("1,234,567.89"), and stray symbols. If the result is still ambiguous
+    # (e.g. multiple dots from European thousands) we REJECT rather than guess,
+    # because a wrong coordinate is worse than a rejected row.
+    cleaned = _NUMERIC_CLEAN_RE.sub("", text)
+    if cleaned in ("", "+", "-", ".") or cleaned.count(".") > 1:
+        return None
+    try:
+        return float(cleaned)
+    except (TypeError, ValueError):
+        return None
+
+
+def detect_delimiter(sample: str) -> str:
+    """Pick the delimiter from the first non-empty line.
+
+    Total stations and European exports often use tab or semicolon; some
+    coordinate dumps are whitespace-delimited. Defaults to comma. Returns the
+    literal " " sentinel to mean 'split on runs of whitespace'.
+    """
+    for line in sample.splitlines():
+        if not line.strip():
+            continue
+        counts = {d: line.count(d) for d in (",", "\t", ";", "|")}
+        best = max(counts, key=counts.get)
+        if counts[best] > 0:
+            return best
+        if len(line.split()) > 1:
+            return " "
+        return ","
+    return ","
+
+
+def split_rows(text: str) -> list[list[str]]:
+    """Tokenize file text into rows, auto-detecting the delimiter."""
+    delimiter = detect_delimiter(text)
+    rows: list[list[str]] = []
+
+    if delimiter == " ":
+        for line in text.splitlines():
+            if line.strip():
+                rows.append(line.split())
+        return rows
+
+    reader = csv.reader(io.StringIO(text), delimiter=delimiter)
+    for row in reader:
+        if row and any(str(cell).strip() for cell in row):
+            rows.append(row)
+    return rows
 
 
 def normalize_description(value: str) -> str:
@@ -244,6 +311,8 @@ def read_rows_with_mapping(raw_rows: list[list[str]], column_mapping: dict[str, 
                 "northing": cell(raw, "northing"),
                 "easting": cell(raw, "easting"),
                 "elevation": cell(raw, "elevation"),
+                "latitude": cell(raw, "latitude"),
+                "longitude": cell(raw, "longitude"),
                 "description": cell(raw, "description"),
                 "source_file": "",
             }
@@ -254,9 +323,10 @@ def read_rows_with_mapping(raw_rows: list[list[str]], column_mapping: dict[str, 
 def read_point_rows(raw_file: Path, column_mapping: dict[str, Any] | None = None) -> list[dict[str, str]]:
     rows: list[dict[str, str]] = []
 
-    with raw_file.open("r", encoding="utf-8", errors="ignore", newline="") as f:
-        reader = csv.reader(f)
-        raw_rows = [row for row in reader if row and any(str(cell).strip() for cell in row)]
+    # encoding="utf-8-sig" strips a leading BOM so the first header cell isn't
+    # "﻿point"; split_rows auto-detects comma/tab/semicolon/whitespace.
+    text = raw_file.read_text(encoding="utf-8-sig", errors="ignore")
+    raw_rows = split_rows(text)
 
     if not raw_rows:
         return []
@@ -269,31 +339,59 @@ def read_point_rows(raw_file: Path, column_mapping: dict[str, Any] | None = None
                 row["source_file"] = raw_file.name
         return mapped
 
-    first = [cell.strip() for cell in raw_rows[0]]
-    first_lower = [cell.lower() for cell in first]
-    has_header = any(
-        cell in {"point", "point_id", "pt", "northing", "easting", "description"}
-        for cell in first_lower
-    )
+    def norm(cell: str) -> str:
+        return re.sub(r"[^a-z0-9]+", "", str(cell).strip().lower())
+
+    header_tokens = {
+        "point", "pointid", "pt", "ptid", "pnt", "number", "name", "id",
+        "northing", "north", "n", "y", "easting", "east", "e", "x",
+        "elevation", "elev", "z", "height",
+        "latitude", "lat", "longitude", "long", "lng", "lon",
+        "description", "desc", "descript", "note", "notes", "code",
+    }
+    first_norm = [norm(cell) for cell in raw_rows[0]]
+    has_header = any(token in header_tokens for token in first_norm)
 
     if has_header:
-        headers = first_lower
+        def find(*candidates: str) -> int | None:
+            for index, key in enumerate(first_norm):
+                if key in candidates:
+                    return index
+            return None
+
+        col = {
+            "point": find("point", "pointid", "pt", "ptid", "pnt", "number", "name", "id"),
+            "northing": find("northing", "north", "n", "y"),
+            "easting": find("easting", "east", "e", "x"),
+            "elevation": find("elevation", "elev", "z", "height"),
+            "latitude": find("latitude", "lat"),
+            "longitude": find("longitude", "long", "lng", "lon"),
+            "description": find("description", "desc", "descript", "note", "notes", "code"),
+        }
+
+        def cell(raw: list[str], field: str) -> str:
+            index = col.get(field)
+            return raw[index].strip() if index is not None and 0 <= index < len(raw) else ""
+
         for raw in raw_rows[1:]:
-            item = {headers[i]: raw[i].strip() if i < len(raw) else "" for i in range(len(headers))}
             rows.append(
                 {
-                    "point": item.get("point") or item.get("point_id") or item.get("pt") or item.get("id") or "",
-                    "northing": item.get("northing") or item.get("n") or item.get("y") or "",
-                    "easting": item.get("easting") or item.get("e") or item.get("x") or "",
-                    "elevation": item.get("elevation") or item.get("elev") or item.get("z") or "",
-                    "description": item.get("description") or item.get("desc") or "",
-                    "source_file": item.get("source_file") or item.get("file") or raw_file.name,
+                    "point": cell(raw, "point"),
+                    "northing": cell(raw, "northing"),
+                    "easting": cell(raw, "easting"),
+                    "elevation": cell(raw, "elevation"),
+                    "latitude": cell(raw, "latitude"),
+                    "longitude": cell(raw, "longitude"),
+                    "description": cell(raw, "description"),
+                    "source_file": raw_file.name,
                 }
             )
         return rows
 
     for raw in raw_rows:
-        if len(raw) < 4:
+        # Need at least point + northing + easting. Coordinate-only files
+        # (3 columns, no description/elevation) used to be dropped entirely.
+        if len(raw) < 3:
             continue
 
         point = raw[0].strip()
@@ -316,6 +414,8 @@ def read_point_rows(raw_file: Path, column_mapping: dict[str, Any] | None = None
                 "northing": northing,
                 "easting": easting,
                 "elevation": elevation,
+                "latitude": "",
+                "longitude": "",
                 "description": description,
                 "source_file": source_file,
             }
@@ -329,7 +429,7 @@ def grid_key(northing: float, easting: float, tolerance_ft: float = 1.0) -> tupl
 
 
 def write_csv(path: Path, rows: list[dict[str, Any]]) -> None:
-    fields = ["point", "northing", "easting", "elevation", "description", "source_file"]
+    fields = ["point", "northing", "easting", "elevation", "latitude", "longitude", "description", "source_file"]
     with path.open("w", encoding="utf-8", newline="") as f:
         writer = csv.DictWriter(f, fieldnames=fields)
         writer.writeheader()
@@ -349,29 +449,53 @@ def write_kml(path: Path, rows: list[dict[str, Any]]) -> None:
     path.write_text(newline.join(kml_lines) + newline, encoding="utf-8")
 
 
-def clean_point_file(raw_file: Path, output_dir: Path, column_mapping: dict[str, Any] | None = None) -> CleanResult:
+def clean_point_file(
+    raw_file: Path,
+    output_dir: Path,
+    column_mapping: dict[str, Any] | None = None,
+    skip_marker_filter: bool = False,
+) -> CleanResult:
     rows = read_point_rows(raw_file, column_mapping)
 
     accepted: list[dict[str, Any]] = []
     review: list[dict[str, Any]] = []
     rejected: list[dict[str, Any]] = []
     duplicates: list[dict[str, Any]] = []
-    seen: dict[tuple[int, int], dict[str, Any]] = {}
+    seen: dict[tuple, dict[str, Any]] = {}
 
     for row in rows:
         n = safe_float(row.get("northing"))
         e = safe_float(row.get("easting"))
+        lat = safe_float(row.get("latitude"))
+        lng = safe_float(row.get("longitude"))
         description = row.get("description", "")
 
-        if n is None or e is None:
+        has_ne = n is not None and e is not None
+        has_latlng = (
+            lat is not None and -90.0 <= lat <= 90.0
+            and lng is not None and -180.0 <= lng <= 180.0
+        )
+
+        # A row needs SOME usable location: projected northing/easting OR
+        # geographic latitude/longitude. Lat/long files used to be rejected.
+        if not has_ne and not has_latlng:
             rejected.append(row)
             continue
 
-        if not is_marker_description(description):
+        # When skip_marker_filter is on (coordinate-only / non-survey uploads)
+        # every located row is accepted; otherwise a recognized monument code
+        # is still required and the rest fall through to manual review.
+        if not skip_marker_filter and not is_marker_description(description):
             review.append(row)
             continue
 
-        key = grid_key(n, e, tolerance_ft=1.0)
+        # Dedup by projected grid when available, else by a ~1ft lat/long grid
+        # (6 decimal places of a degree ~= 0.11m).
+        if has_ne:
+            key: tuple = grid_key(n, e, tolerance_ft=1.0)
+        else:
+            key = ("ll", round(lat, 6), round(lng, 6))
+
         if key in seen:
             duplicates.append(row)
             continue
@@ -477,6 +601,7 @@ def process_one_job(api: PointVaultApi) -> bool:
     raw_path = job["raw_storage_path"]
     prefix = job["prefix"]
     column_mapping = job.get("column_mapping")
+    skip_marker_filter = bool(job.get("skip_marker_filter"))
 
     print(f"Processing import job {job_id}")
     print(f"Downloading {raw_path}")
@@ -491,7 +616,7 @@ def process_one_job(api: PointVaultApi) -> bool:
             raw_bytes = api.download_storage_file(bucket, raw_path)
             raw_file.write_bytes(raw_bytes)
 
-            result = clean_point_file(raw_file, output_dir, column_mapping)
+            result = clean_point_file(raw_file, output_dir, column_mapping, skip_marker_filter)
 
             processed_prefix = f"{prefix}/processed"
             accepted_path = api.upload_storage_file(
