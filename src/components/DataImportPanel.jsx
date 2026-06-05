@@ -37,6 +37,11 @@ import {
   promoteImportRows,
   requeueStorageImportJob,
 } from "@/lib/dataIntegration";
+import {
+  COORDINATE_SYSTEMS,
+  COORDINATE_SYSTEM_GROUPS,
+  COORDINATE_SYSTEM_BY_EPSG,
+} from "@/lib/coordinateSystems";
 
 // Fields a column can be labelled as. point/northing/easting are required for
 // the mapping to be used; the rest are optional.
@@ -331,10 +336,10 @@ export function DataImportPanel({ company, membership, defaultEpsg, defaultCoord
   // remembers the choice so the same crew's next import is pre-checked.
   const onEpsgChange = (value) => {
     setDeclaredEpsg(value);
-    setCoordinateConfirmed(false);
-  };
-  const onCoordinateSystemChange = (value) => {
-    setDeclaredCoordinateSystem(value);
+    // Keep the system name in sync with a hand-typed EPSG when it matches a
+    // known system; otherwise leave the name as-is (custom code).
+    const sys = COORDINATE_SYSTEM_BY_EPSG.get(String(value));
+    if (sys) setDeclaredCoordinateSystem(sys.name);
     setCoordinateConfirmed(false);
   };
   const confirmCoordinate = (checked) => {
@@ -348,6 +353,26 @@ export function DataImportPanel({ company, membership, defaultEpsg, defaultCoord
       }
     }
   };
+  // Picking a coordinate system from the dropdown sets BOTH the name and the
+  // correct EPSG, so the two can never disagree.
+  const onSystemSelect = (epsgValue) => {
+    const sys = COORDINATE_SYSTEM_BY_EPSG.get(String(epsgValue));
+    setDeclaredEpsg(String(epsgValue));
+    if (sys) setDeclaredCoordinateSystem(sys.name);
+    setCoordinateConfirmed(false);
+  };
+
+  const groupedSystems = useMemo(() => {
+    const byGroup = new Map(COORDINATE_SYSTEM_GROUPS.map((group) => [group.key, []]));
+    for (const system of COORDINATE_SYSTEMS) {
+      if (byGroup.has(system.group)) byGroup.get(system.group).push(system);
+    }
+    return COORDINATE_SYSTEM_GROUPS.map((group) => ({
+      ...group,
+      systems: byGroup.get(group.key) || [],
+    }));
+  }, []);
+  const epsgInList = COORDINATE_SYSTEM_BY_EPSG.has(String(declaredEpsg));
 
   const loadRecentJobs = async () => {
     if (!company?.id) return;
@@ -890,7 +915,7 @@ export function DataImportPanel({ company, membership, defaultEpsg, defaultCoord
           )}
 
           <div className="mt-4 grid gap-4 lg:grid-cols-[220px_1fr_260px]">
-            <Field label="EPSG / zone">
+            <Field label="EPSG (auto-set — override for a custom code)">
               <TextInput
                 value={declaredEpsg}
                 onChange={(event) => onEpsgChange(event.target.value)}
@@ -898,11 +923,26 @@ export function DataImportPanel({ company, membership, defaultEpsg, defaultCoord
               />
             </Field>
 
-            <Field label="Coordinate system name">
-              <TextInput
-                value={declaredCoordinateSystem}
-                onChange={(event) => onCoordinateSystemChange(event.target.value)}
-              />
+            <Field label="Coordinate system (sets EPSG)">
+              <SelectInput
+                value={String(declaredEpsg)}
+                onChange={(event) => onSystemSelect(event.target.value)}
+              >
+                {!epsgInList && (
+                  <option value={String(declaredEpsg)}>
+                    Custom — EPSG {declaredEpsg || "?"}
+                  </option>
+                )}
+                {groupedSystems.map((group) => (
+                  <optgroup key={group.key} label={group.label}>
+                    {group.systems.map((system) => (
+                      <option key={system.epsg} value={String(system.epsg)}>
+                        {system.name} — EPSG {system.epsg}
+                      </option>
+                    ))}
+                  </optgroup>
+                ))}
+              </SelectInput>
             </Field>
 
             <Field label="Default visibility after import">
