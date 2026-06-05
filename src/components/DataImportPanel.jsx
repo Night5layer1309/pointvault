@@ -42,6 +42,7 @@ import {
   COORDINATE_SYSTEM_GROUPS,
   COORDINATE_SYSTEM_BY_EPSG,
 } from "@/lib/coordinateSystems";
+import { suggestZoneForFile } from "@/lib/detectCoordinateSystem";
 
 // Fields a column can be labelled as. point/northing/easting are required for
 // the mapping to be used; the rest are optional.
@@ -53,6 +54,22 @@ const MAPPING_FIELDS = [
   { key: "description", label: "Description" },
 ];
 const REQUIRED_MAPPING_FIELDS = ["point", "northing", "easting"];
+
+function ReasonBadge({ reason }) {
+  const map = {
+    latlong: ["lat/long", "bg-blue-100 text-blue-800"],
+    filename: ["file name", "bg-indigo-100 text-indigo-800"],
+    manual: ["you set", "bg-slate-200 text-slate-700"],
+    default: ["default", "bg-amber-100 text-amber-800"],
+    detecting: ["detecting…", "bg-slate-100 text-slate-500"],
+  };
+  const [label, cls] = map[reason] || map.default;
+  return (
+    <span className={`rounded-full px-2 py-0.5 text-[10px] font-black uppercase tracking-wide ${cls}`}>
+      {label}
+    </span>
+  );
+}
 
 function Message({ kind = "info", children }) {
   if (!children) return null;
@@ -291,6 +308,12 @@ export function DataImportPanel({ company, membership, defaultEpsg, defaultCoord
   const [skipMarkerFilter, setSkipMarkerFilter] = useState(false);
   const [defaultVisibility, setDefaultVisibility] = useState("company");
 
+  // Auto-suggest: single-file detection note + per-file batch plan.
+  const [detectionNote, setDetectionNote] = useState("");
+  const [batchPlan, setBatchPlan] = useState([]); // [{ key, name, epsg, zoneName, reason }]
+  const [batchReviewed, setBatchReviewed] = useState(false);
+  const [editingIndex, setEditingIndex] = useState(-1);
+
   const [recentJobs, setRecentJobs] = useState([]);
   const [activeJob, setActiveJob] = useState(null);
 
@@ -374,6 +397,18 @@ export function DataImportPanel({ company, membership, defaultEpsg, defaultCoord
   }, []);
   const epsgInList = COORDINATE_SYSTEM_BY_EPSG.has(String(declaredEpsg));
 
+  // Option nodes for any zone <select> (main, set-all, per-file editor).
+  const renderZoneOptions = () =>
+    groupedSystems.map((group) => (
+      <optgroup key={group.key} label={group.label}>
+        {group.systems.map((system) => (
+          <option key={system.epsg} value={String(system.epsg)}>
+            {system.name} — EPSG {system.epsg}
+          </option>
+        ))}
+      </optgroup>
+    ));
+
   const loadRecentJobs = async () => {
     if (!company?.id) return;
 
@@ -397,35 +432,134 @@ export function DataImportPanel({ company, membership, defaultEpsg, defaultCoord
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [company?.id]);
 
-  const loadPreviewFromFile = async (file) => {
+  const loadPreviewFromFile = async (file, { detect = false } = {}) => {
     if (!file) {
       setPreviewRows([]);
       setColumnMapping({ has_header: false, columns: {} });
+      setDetectionNote("");
       return;
     }
     try {
       const { rows } = await previewCsvFile(file, 6);
+      const mapping = guessColumnMapping(rows);
       setPreviewRows(rows);
-      setColumnMapping(guessColumnMapping(rows));
+      setColumnMapping(mapping);
+      if (detect) {
+        const s = suggestZoneForFile({
+          rows,
+          columns: mapping.columns,
+          filename: file.name,
+          fallbackEpsg: declaredEpsg,
+        });
+        if (s.reason !== "default") {
+          setDeclaredEpsg(String(s.epsg));
+          setDeclaredCoordinateSystem(s.name);
+          setCoordinateConfirmed(false);
+          setDetectionNote(
+            s.reason === "latlong"
+              ? `Auto-detected decimal latitude/longitude → set to ${s.name}. Confirm below.`
+              : `File name suggests ${s.name} → set from the file name. Confirm or change below.`,
+          );
+        } else {
+          setDetectionNote("");
+        }
+      }
     } catch {
       setPreviewRows([]);
       setColumnMapping({ has_header: false, columns: {} });
+      setDetectionNote("");
     }
   };
+
+  // Detect a zone per file in a batch so each file uploads with its own zone.
+  const buildBatchPlan = async (files) => {
+    setBatchReviewed(false);
+    setBatchPlan(
+      files.map((f) => ({
+        key: f.relativePath,
+        name: f.name,
+        epsg: String(declaredEpsg),
+        zoneName: declaredCoordinateSystem,
+        reason: "detecting",
+      })),
+    );
+
+    for (let i = 0; i < files.length; i += 1) {
+      let s = { epsg: declaredEpsg, name: declaredCoordinateSystem, reason: "default" };
+      try {
+        const { rows } = await previewCsvFile(files[i].file, 6);
+        const mapping = guessColumnMapping(rows);
+        s = suggestZoneForFile({
+          rows,
+          columns: mapping.columns,
+          filename: files[i].name,
+          fallbackEpsg: declaredEpsg,
+        });
+      } catch {
+        /* keep default */
+      }
+      // eslint-disable-next-line no-loop-func
+      setBatchPlan((prev) => {
+        const next = prev.slice();
+        next[i] = {
+          key: files[i].relativePath,
+          name: files[i].name,
+          epsg: String(s.epsg),
+          zoneName: s.name,
+          reason: s.reason,
+        };
+        return next;
+      });
+    }
+  };
+
+  const onBatchZoneChange = (index, epsgValue) => {
+    const sys = COORDINATE_SYSTEM_BY_EPSG.get(String(epsgValue));
+    setBatchReviewed(false);
+    setEditingIndex(-1);
+    setBatchPlan((prev) => {
+      const next = prev.slice();
+      next[index] = {
+        ...next[index],
+        epsg: String(epsgValue),
+        zoneName: sys ? sys.name : `EPSG ${epsgValue}`,
+        reason: "manual",
+      };
+      return next;
+    });
+  };
+
+  const setAllBatchZones = (epsgValue) => {
+    if (!epsgValue) return;
+    const sys = COORDINATE_SYSTEM_BY_EPSG.get(String(epsgValue));
+    setBatchReviewed(false);
+    setBatchPlan((prev) =>
+      prev.map((p) => ({
+        ...p,
+        epsg: String(epsgValue),
+        zoneName: sys ? sys.name : `EPSG ${epsgValue}`,
+        reason: "manual",
+      })),
+    );
+  };
+
+  const batchDetecting = batchPlan.some((p) => p.reason === "detecting");
 
   const handleSingleFileChange = (event) => {
     const selected = event.target.files?.[0] || null;
     setSingleFile(selected);
     setBatchFiles([]);
+    setBatchPlan([]);
     setUploadProgress(null);
     setMessage("");
     setError("");
-    loadPreviewFromFile(selected);
+    loadPreviewFromFile(selected, { detect: true });
   };
 
   const handleBatchChange = (event) => {
     const files = normalizeImportFileList(event.target.files);
     setBatchFiles(files);
+    if (files.length) buildBatchPlan(files);
     setSingleFile(null);
     setUploadProgress(null);
     setMessage(
@@ -440,6 +574,7 @@ export function DataImportPanel({ company, membership, defaultEpsg, defaultCoord
   const handleFolderChange = (event) => {
     const files = normalizeImportFileList(event.target.files);
     setBatchFiles(files);
+    if (files.length) buildBatchPlan(files);
     setSingleFile(null);
     setUploadProgress(null);
     setMessage(
@@ -451,7 +586,7 @@ export function DataImportPanel({ company, membership, defaultEpsg, defaultCoord
     loadPreviewFromFile(files[0]?.file || null);
   };
 
-  const uploadOneFileToStorage = async (fileItem, index = 0, total = 1) => {
+  const uploadOneFileToStorage = async (fileItem, index = 0, total = 1, override = null) => {
     setUploadingFileName(fileItem.relativePath || fileItem.name || fileItem.file?.name || "");
     setUploadProgress({
       fileIndex: index + 1,
@@ -467,8 +602,8 @@ export function DataImportPanel({ company, membership, defaultEpsg, defaultCoord
     const { data, error: uploadError } = await createAndUploadStorageImport({
       companyId: company.id,
       file: fileItem.file || fileItem,
-      declaredEpsg,
-      declaredCoordinateSystem,
+      declaredEpsg: override ? override.epsg : declaredEpsg,
+      declaredCoordinateSystem: override ? override.zoneName : declaredCoordinateSystem,
       defaultVisibility,
       columnMapping: mappingComplete ? columnMapping : null,
       skipMarkerFilter,
@@ -563,7 +698,11 @@ export function DataImportPanel({ company, membership, defaultEpsg, defaultCoord
     let failureCount = 0;
 
     for (let index = 0; index < batchFiles.length; index += 1) {
-      const result = await uploadOneFileToStorage(batchFiles[index], index, batchFiles.length);
+      // Each file uploads with ITS planned zone (per-file auto-detect/override),
+      // so a folder spanning multiple zones imports correctly.
+      const plan = batchPlan[index];
+      const override = plan ? { epsg: plan.epsg, zoneName: plan.zoneName } : null;
+      const result = await uploadOneFileToStorage(batchFiles[index], index, batchFiles.length, override);
 
       if (result.ok) {
         successCount += 1;
@@ -587,6 +726,8 @@ export function DataImportPanel({ company, membership, defaultEpsg, defaultCoord
     setUploadProgress(null);
     setUploadingFileName("");
     setBatchFiles([]);
+    setBatchPlan([]);
+    setBatchReviewed(false);
     loadPreviewFromFile(null);
     await loadRecentJobs();
     setLoading(false);
@@ -879,7 +1020,8 @@ export function DataImportPanel({ company, membership, defaultEpsg, defaultCoord
                     Selected batch: {batchFiles.length.toLocaleString()} CSV/TXT files
                   </div>
                   <div className="mt-1 text-xs font-semibold text-slate-500">
-                    Each file becomes its own storage import job.
+                    Each file uploads with its OWN zone below — so a folder spanning multiple zones
+                    imports correctly. {batchDetecting ? "Detecting…" : "Review and adjust per file."}
                   </div>
                 </div>
 
@@ -887,7 +1029,7 @@ export function DataImportPanel({ company, membership, defaultEpsg, defaultCoord
                   type="button"
                   onClick={queueBatchFiles}
                   className="rounded-2xl px-5 py-3"
-                  disabled={loading || !canImport || !coordinateConfirmed}
+                  disabled={loading || !canImport || !batchReviewed}
                 >
                   {loading ? (
                     <Loader2 size={16} className="mr-2 animate-spin" />
@@ -898,19 +1040,87 @@ export function DataImportPanel({ company, membership, defaultEpsg, defaultCoord
                 </Button>
               </div>
 
-              <div className="mt-3 max-h-64 overflow-auto rounded-2xl bg-slate-50 p-3 text-xs font-semibold text-slate-600">
-                {batchFiles.slice(0, 100).map((item) => (
-                  <div key={item.relativePath} className="truncate rounded-xl px-3 py-2">
-                    {item.relativePath} · {formatBytes(item.size)}
-                  </div>
-                ))}
-
-                {batchFiles.length > 100 && (
-                  <div className="rounded-xl bg-slate-100 px-3 py-2 font-black text-slate-700">
-                    ...and {(batchFiles.length - 100).toLocaleString()} more files
-                  </div>
-                )}
+              <div className="mt-3 flex flex-wrap items-center gap-2 text-xs font-semibold text-slate-600">
+                <span>Set all files to:</span>
+                <select
+                  defaultValue=""
+                  onChange={(event) => setAllBatchZones(event.target.value)}
+                  className="max-w-[18rem] rounded-xl border border-slate-200 bg-white px-2 py-1 text-xs"
+                >
+                  <option value="" disabled>
+                    Choose a zone…
+                  </option>
+                  {renderZoneOptions()}
+                </select>
               </div>
+
+              <div className="mt-3 max-h-80 overflow-auto rounded-2xl border border-slate-200">
+                <table className="w-full text-left text-xs">
+                  <thead className="sticky top-0 bg-slate-100 font-black text-slate-700">
+                    <tr>
+                      <th className="px-2 py-2">File</th>
+                      <th className="px-2 py-2">From</th>
+                      <th className="px-2 py-2">Zone (per file)</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {batchPlan.map((p, index) => (
+                      <tr key={p.key} className="border-t border-slate-100 odd:bg-white even:bg-slate-50">
+                        <td className="px-2 py-2 font-semibold text-slate-800">{p.name}</td>
+                        <td className="px-2 py-2">
+                          <ReasonBadge reason={p.reason} />
+                        </td>
+                        <td className="px-2 py-2">
+                          {editingIndex === index ? (
+                            <select
+                              autoFocus
+                              value={p.epsg}
+                              onChange={(event) => onBatchZoneChange(index, event.target.value)}
+                              onBlur={() => setEditingIndex(-1)}
+                              className="w-full max-w-[20rem] rounded-xl border border-slate-300 bg-white px-2 py-1 text-xs"
+                            >
+                              {!COORDINATE_SYSTEM_BY_EPSG.has(String(p.epsg)) && (
+                                <option value={String(p.epsg)}>Custom — EPSG {p.epsg}</option>
+                              )}
+                              {renderZoneOptions()}
+                            </select>
+                          ) : (
+                            <button
+                              type="button"
+                              onClick={() => setEditingIndex(index)}
+                              className="flex items-center gap-1 text-left font-semibold text-slate-700 hover:text-blue-700"
+                              title="Click to change this file's zone"
+                            >
+                              {p.zoneName} <span className="text-blue-600">▾</span>
+                            </button>
+                          )}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+
+              <label
+                className={`mt-3 flex items-start gap-3 rounded-2xl border p-3 text-sm ${
+                  batchReviewed ? "border-emerald-200 bg-emerald-50" : "border-amber-300 bg-amber-50"
+                }`}
+              >
+                <input
+                  type="checkbox"
+                  className="mt-1 h-4 w-4"
+                  checked={batchReviewed}
+                  onChange={(event) => setBatchReviewed(event.target.checked)}
+                  disabled={!canImport || batchDetecting}
+                />
+                <span className="font-semibold text-slate-700">
+                  I've reviewed each file's zone above.
+                  <span className="mt-1 block text-xs font-medium text-slate-500">
+                    Required before upload. lat/long files are auto-set to WGS 84; everything else
+                    defaults to your selected zone — change any row that's different.
+                  </span>
+                </span>
+              </label>
             </div>
           )}
 
@@ -957,32 +1167,38 @@ export function DataImportPanel({ company, membership, defaultEpsg, defaultCoord
           </div>
 
           <div className="mt-4 grid gap-3">
-            <label
-              className={`flex items-start gap-3 rounded-2xl border p-3 text-sm ${
-                coordinateConfirmed
-                  ? "border-emerald-200 bg-emerald-50"
-                  : "border-amber-300 bg-amber-50"
-              }`}
-            >
-              <input
-                type="checkbox"
-                className="mt-1 h-4 w-4"
-                checked={coordinateConfirmed}
-                onChange={(event) => confirmCoordinate(event.target.checked)}
-                disabled={!canImport}
-              />
-              <span className="font-semibold text-slate-700">
-                I confirm these points are in{" "}
-                <span className="font-black text-slate-950">
-                  {declaredCoordinateSystem || "the selected system"}
-                </span>{" "}
-                (EPSG {declaredEpsg || "?"}).
-                <span className="mt-1 block text-xs font-medium text-slate-500">
-                  Required before upload. If this is wrong, every point lands in the wrong place on
-                  the map. For decimal latitude/longitude files, set EPSG to <strong>4326</strong>.
+            {!selectedBatchFiles && detectionNote && (
+              <Message kind="info">{detectionNote}</Message>
+            )}
+
+            {!selectedBatchFiles && (
+              <label
+                className={`flex items-start gap-3 rounded-2xl border p-3 text-sm ${
+                  coordinateConfirmed
+                    ? "border-emerald-200 bg-emerald-50"
+                    : "border-amber-300 bg-amber-50"
+                }`}
+              >
+                <input
+                  type="checkbox"
+                  className="mt-1 h-4 w-4"
+                  checked={coordinateConfirmed}
+                  onChange={(event) => confirmCoordinate(event.target.checked)}
+                  disabled={!canImport}
+                />
+                <span className="font-semibold text-slate-700">
+                  I confirm these points are in{" "}
+                  <span className="font-black text-slate-950">
+                    {declaredCoordinateSystem || "the selected system"}
+                  </span>{" "}
+                  (EPSG {declaredEpsg || "?"}).
+                  <span className="mt-1 block text-xs font-medium text-slate-500">
+                    Required before upload. If this is wrong, every point lands in the wrong place on
+                    the map. For decimal latitude/longitude files, set EPSG to <strong>4326</strong>.
+                  </span>
                 </span>
-              </span>
-            </label>
+              </label>
+            )}
 
             <label className="flex items-start gap-3 rounded-2xl border border-slate-200 bg-white p-3 text-sm">
               <input

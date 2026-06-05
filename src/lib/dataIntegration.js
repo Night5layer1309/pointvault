@@ -200,6 +200,7 @@ export function guessColumnMapping(rows = []) {
   const headerTokens = [
     "point", "pointid", "pt", "ptid", "pnt", "number", "name", "id",
     "northing", "north", "n", "y", "easting", "east", "e", "x",
+    "latitude", "lat", "longitude", "long", "lng", "lon",
     "elevation", "elev", "z", "height", "description", "desc", "descript", "note", "notes", "code",
   ];
   const hasHeader = first.some((cell) => headerTokens.includes(norm(cell)));
@@ -214,6 +215,8 @@ export function guessColumnMapping(rows = []) {
     assign("point", "point", "pointid", "pt", "ptid", "pnt", "number", "name", "id");
     assign("northing", "northing", "north", "n", "y");
     assign("easting", "easting", "east", "e", "x");
+    assign("latitude", "latitude", "lat");
+    assign("longitude", "longitude", "long", "lng", "lon");
     assign("elevation", "elevation", "elev", "z", "height");
     assign("description", "description", "desc", "descript", "note", "notes", "code", "descr");
   } else {
