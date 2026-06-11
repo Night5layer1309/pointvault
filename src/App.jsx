@@ -266,7 +266,9 @@ function RecenterMap({ center, zoom }) {
   useEffect(() => {
     if (lat == null || lng == null) return;
     if (isFirstSnap.current) {
-      map.setView([lat, lng], zoom || map.getZoom() || 16, { animate: true });
+      // Jump straight to the target instead of animating across many zoom
+      // levels (which forces Leaflet to load every intermediate tile level).
+      map.setView([lat, lng], zoom || map.getZoom() || 16, { animate: false });
       isFirstSnap.current = false;
     } else {
       map.panTo([lat, lng], { animate: true });
@@ -1051,7 +1053,7 @@ export default function SurveyPointAppPrototype() {
   const [pointLoadMessage, setPointLoadMessage] = useState("Tap You Are Here to load nearby company points.");
   const [selectedPointId, setSelectedPointId] = useState(null);
   const [tab, setTab] = useState("map");
-  const [userLocation, setUserLocation] = useState(null);
+  const [userLocation, setUserLocation] = useState(() => loadLastUserLocation());
   const [followUser, setFollowUser] = useState(true);
   const [installPrompt, setInstallPrompt] = useState(null);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
@@ -1118,11 +1120,6 @@ export default function SurveyPointAppPrototype() {
   };
 
   const canDeletePoints = ["owner", "admin"].includes(activeMembership?.role);
-
-  useEffect(() => {
-    const lastLocation = loadLastUserLocation();
-    if (lastLocation) setUserLocation(lastLocation);
-  }, []);
 
   useEffect(() => {
     if (!activeCompany?.id) {
@@ -1353,7 +1350,7 @@ export default function SurveyPointAppPrototype() {
     setLoadingPoints(false);
   };
 
-  const acceptGpsPosition = async (position, shouldLoadPoints = false) => {
+  const acceptGpsPosition = async (position, shouldLoadPoints = false, force = false) => {
     const next = {
       lat: position.coords.latitude,
       lng: position.coords.longitude,
@@ -1362,6 +1359,7 @@ export default function SurveyPointAppPrototype() {
     };
 
     setUserLocation((current) => {
+      if (force) return next;
       if (!current) return next;
       if (!next.accuracy) return next;
       if (!current.accuracy) return next;
@@ -1380,11 +1378,28 @@ export default function SurveyPointAppPrototype() {
       return;
     }
 
-    setLocationMessage("Getting high-accuracy phone GPS location...");
+    // Re-enable follow so the map snaps back even if the user had panned away.
+    // RecenterMap is conditionally rendered, so flipping this back on remounts
+    // it and forces a fresh snap to the new fix.
+    setFollowUser(true);
+    setLocationMessage("Getting your location...");
 
+    // Stage 1: a fast, cached/coarse fix so the map recenters on you almost
+    // instantly instead of waiting on a cold high-accuracy satellite lock.
+    navigator.geolocation.getCurrentPosition(
+      (position) => acceptGpsPosition(position, true, true),
+      () => {},
+      {
+        enableHighAccuracy: false,
+        timeout: 8000,
+        maximumAge: 60000,
+      },
+    );
+
+    // Stage 2: high-accuracy refine in the background.
     navigator.geolocation.getCurrentPosition(
       async (position) => {
-        await acceptGpsPosition(position, true);
+        await acceptGpsPosition(position, false, true);
       },
       (error) => {
         setLocationMessage(error.message || "GPS permission denied or unavailable.");
@@ -1415,7 +1430,9 @@ export default function SurveyPointAppPrototype() {
       (error) => setLocationMessage(error.message || "GPS tracking unavailable."),
       {
         enableHighAccuracy: true,
-        maximumAge: 0,
+        // Allow a recent cached fix to seed the map instantly; the watch keeps
+        // refining to fresh high-accuracy positions within a few seconds.
+        maximumAge: 30000,
         timeout: 20000,
       },
     );
