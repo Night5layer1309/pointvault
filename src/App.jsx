@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   AlertTriangle,
   CheckCircle2,
@@ -1386,8 +1386,14 @@ export default function SurveyPointAppPrototype() {
 
     // Stage 1: a fast, cached/coarse fix so the map recenters on you almost
     // instantly instead of waiting on a cold high-accuracy satellite lock.
+    // Snap the map first, then defer the point load by a beat so the marker
+    // rebuild burst doesn't compete with the recenter/zoom animation.
     navigator.geolocation.getCurrentPosition(
-      (position) => acceptGpsPosition(position, true, true),
+      (position) => {
+        acceptGpsPosition(position, false, true);
+        const fix = { lat: position.coords.latitude, lng: position.coords.longitude };
+        window.setTimeout(() => loadNearbyPoints(fix), 350);
+      },
       () => {},
       {
         enableHighAccuracy: false,
@@ -1451,10 +1457,13 @@ export default function SurveyPointAppPrototype() {
     setTab("points");
   };
 
-  const selectPoint = (point) => {
+  // Stable identity: this is a dep of ClusteredPoints' rebuild effect, so a new
+  // reference on every render (e.g. moveend updating mapCenter) would tear down
+  // and rebuild every marker after each pan/zoom.
+  const selectPoint = useCallback((point) => {
     setSelectedPointId(pointKey(point));
     setTab("points");
-  };
+  }, []);
 
   const deleteCompanyPoint = async (point) => {
     if (!point?.dbId) {
