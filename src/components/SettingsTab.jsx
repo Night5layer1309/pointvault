@@ -7,7 +7,7 @@ import { setUserPassword } from "@/lib/companyAccounts";
 // Public contact channels. Edit these in one place — they feed both the in-app
 // Contact form and anything you print (business cards, store listings, etc.).
 const SUPPORT_EMAIL = "support@pointvault.app";
-const SUPPORT_PHONE = ""; // e.g. "(555) 123-4567" — your Google Voice number. Leave "" to hide the phone row.
+const SUPPORT_PHONE = "+1 (401) 385-5571"; // Google Voice number. Leave "" to hide the phone row.
 const WEBSITE_URL = "https://pointvault.app";
 
 const RADIUS_OPTIONS = [
