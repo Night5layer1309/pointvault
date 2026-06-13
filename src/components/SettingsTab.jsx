@@ -1,8 +1,14 @@
 import React, { useState } from "react";
-import { BookOpen, FileText, KeyRound, Moon, Settings as SettingsIcon, Sun } from "lucide-react";
+import { BookOpen, FileText, Globe, KeyRound, Mail, MessageSquare, Moon, Phone, Send, Settings as SettingsIcon, Sun } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { setUserPassword } from "@/lib/companyAccounts";
+
+// Public contact channels. Edit these in one place — they feed both the in-app
+// Contact form and anything you print (business cards, store listings, etc.).
+const SUPPORT_EMAIL = "support@pointvault.app";
+const SUPPORT_PHONE = ""; // e.g. "(555) 123-4567" — your Google Voice number. Leave "" to hide the phone row.
+const WEBSITE_URL = "https://pointvault.app";
 
 const RADIUS_OPTIONS = [
   { value: 1000, label: "Within 1,000 ft" },
@@ -234,6 +240,7 @@ const COORD_SYSTEM_FLAT = COORD_SYSTEM_GROUPS.flatMap((group) => group.zones);
 function SectionTabs({ section, onSection }) {
   const tabs = [
     { id: "settings", label: "Settings", icon: SettingsIcon },
+    { id: "contact", label: "Contact", icon: MessageSquare },
     { id: "legal", label: "Legal", icon: FileText },
     { id: "howto", label: "How-To", icon: BookOpen },
   ];
@@ -420,6 +427,124 @@ function SettingsBody({ theme, onThemeChange, defaultBasemap, onDefaultBasemapCh
   );
 }
 
+function ContactBody({ session }) {
+  const [name, setName] = useState("");
+  const [email, setEmail] = useState(session?.user?.email || "");
+  const [subject, setSubject] = useState("");
+  const [message, setMessage] = useState("");
+  const [opened, setOpened] = useState(false);
+
+  const canSend = subject.trim() && message.trim();
+
+  const send = () => {
+    const lines = [
+      message.trim(),
+      "",
+      "—",
+      name.trim() ? `From: ${name.trim()}` : null,
+      email.trim() ? `Reply to: ${email.trim()}` : null,
+    ].filter(Boolean);
+    const mailto =
+      `mailto:${SUPPORT_EMAIL}` +
+      `?subject=${encodeURIComponent(subject.trim() || "PointVault question")}` +
+      `&body=${encodeURIComponent(lines.join("\n"))}`;
+    // Opens the user's email app pre-filled. Works on phone and desktop with a
+    // mail client configured.
+    window.location.href = mailto;
+    setOpened(true);
+  };
+
+  const inputClass =
+    "w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm outline-none focus:border-blue-400 dark:border-slate-600 dark:bg-slate-900 dark:text-slate-100";
+
+  return (
+    <div className="space-y-4">
+      <div>
+        <h3 className="font-black text-slate-950 dark:text-slate-100">Get in touch</h3>
+        <p className="mt-1 text-sm leading-6 text-slate-600 dark:text-slate-300">
+          Questions, bug reports, or feedback? Email is the fastest way to reach us and we read every message.
+        </p>
+      </div>
+
+      <div className="grid gap-2 sm:grid-cols-2">
+        <a
+          href={`mailto:${SUPPORT_EMAIL}`}
+          className="flex items-center gap-3 rounded-2xl border border-slate-200 bg-white p-4 font-semibold text-slate-900 hover:border-blue-300 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100"
+        >
+          <Mail size={18} className="shrink-0 text-blue-600" />
+          <span className="truncate">{SUPPORT_EMAIL}</span>
+        </a>
+        <a
+          href={WEBSITE_URL}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="flex items-center gap-3 rounded-2xl border border-slate-200 bg-white p-4 font-semibold text-slate-900 hover:border-blue-300 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100"
+        >
+          <Globe size={18} className="shrink-0 text-blue-600" />
+          <span className="truncate">pointvault.app</span>
+        </a>
+        {SUPPORT_PHONE && (
+          <a
+            href={`tel:${SUPPORT_PHONE.replace(/[^0-9+]/g, "")}`}
+            className="flex items-center gap-3 rounded-2xl border border-slate-200 bg-white p-4 font-semibold text-slate-900 hover:border-blue-300 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100"
+          >
+            <Phone size={18} className="shrink-0 text-blue-600" />
+            <span className="truncate">{SUPPORT_PHONE}</span>
+          </a>
+        )}
+      </div>
+
+      <div className="rounded-2xl border border-slate-200 bg-white p-4 dark:border-slate-700 dark:bg-slate-800">
+        <div className="flex items-center gap-2 font-bold text-slate-950 dark:text-slate-100">
+          <MessageSquare size={16} /> Send a message
+        </div>
+        <p className="mt-1 text-xs leading-5 text-slate-500 dark:text-slate-400">
+          This opens your email app with everything filled in — just hit send.
+        </p>
+        <div className="mt-3 grid gap-2">
+          <div className="grid gap-2 sm:grid-cols-2">
+            <input
+              value={name}
+              onChange={(event) => setName(event.target.value)}
+              placeholder="Your name (optional)"
+              className={inputClass}
+              autoComplete="name"
+            />
+            <input
+              value={email}
+              onChange={(event) => setEmail(event.target.value)}
+              placeholder="Your email"
+              className={inputClass}
+              autoComplete="email"
+            />
+          </div>
+          <input
+            value={subject}
+            onChange={(event) => setSubject(event.target.value)}
+            placeholder="Subject"
+            className={inputClass}
+          />
+          <textarea
+            value={message}
+            onChange={(event) => setMessage(event.target.value)}
+            placeholder="How can we help?"
+            rows={5}
+            className={`${inputClass} resize-y`}
+          />
+          <Button onClick={send} disabled={!canSend} className="rounded-2xl px-4 py-3">
+            <Send size={16} className="mr-2" /> Open email to send
+          </Button>
+        </div>
+        {opened && (
+          <div className="mt-3 rounded-2xl bg-emerald-50 px-3 py-2 text-xs font-semibold text-emerald-800 dark:bg-emerald-950 dark:text-emerald-200">
+            Your email app should have opened with the message ready. If nothing happened, email us directly at {SUPPORT_EMAIL}.
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 function LegalBody() {
   return (
     <div className="space-y-4 text-sm leading-6 text-slate-700 dark:text-slate-300">
@@ -551,6 +676,7 @@ export function SettingsTab(props) {
       <Card className="rounded-3xl border-0 shadow-xl dark:bg-slate-800">
         <CardContent className="p-5">
           {section === "settings" && <SettingsBody {...props} />}
+          {section === "contact" && <ContactBody session={props.session} />}
           {section === "legal" && <LegalBody />}
           {section === "howto" && <HowToBody />}
         </CardContent>
