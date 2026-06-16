@@ -1240,52 +1240,81 @@ export default function SurveyPointAppPrototype() {
       return true;
     };
 
+    // Nominatim first (works for most addresses, esp. urban / well-mapped
+    // areas). When OSM doesn't have a match — common for rural US addresses —
+    // fall back to the US Census Geocoder, which is built on USPS/TIGER data
+    // and reliably finds rural roads OSM doesn't index. Both are free with no
+    // API key required.
+    const queryNominatim = async () => {
+      const params = new URLSearchParams({
+        q,
+        format: "json",
+        limit: "5",
+        countrycodes: "us",
+        addressdetails: "0",
+      });
+      const biasCenter = userLocation || mapCenter;
+      if (biasCenter && Number.isFinite(biasCenter.lat) && Number.isFinite(biasCenter.lng)) {
+        const pad = 2;
+        params.set(
+          "viewbox",
+          `${biasCenter.lng - pad},${biasCenter.lat + pad},${biasCenter.lng + pad},${biasCenter.lat - pad}`,
+        );
+        params.set("bounded", "0");
+      }
+      const url = `https://nominatim.openstreetmap.org/search?${params.toString()}`;
+      const response = await fetch(url);
+      if (!response.ok) return null;
+      const results = await response.json();
+      if (!Array.isArray(results) || results.length === 0) return null;
+      const lat = Number(results[0].lat);
+      const lng = Number(results[0].lon);
+      if (!Number.isFinite(lat) || !Number.isFinite(lng)) return null;
+      return { lat, lng, displayName: results[0].display_name };
+    };
+
+    const queryCensus = async () => {
+      const url = `https://geocoding.geo.census.gov/geocoder/locations/onelineaddress?address=${encodeURIComponent(q)}&benchmark=Public_AR_Current&format=json`;
+      const response = await fetch(url);
+      if (!response.ok) return null;
+      const data = await response.json();
+      const matches = data?.result?.addressMatches;
+      if (!Array.isArray(matches) || matches.length === 0) return null;
+      const m = matches[0];
+      const lat = Number(m.coordinates?.y);
+      const lng = Number(m.coordinates?.x);
+      if (!Number.isFinite(lat) || !Number.isFinite(lng)) return null;
+      return { lat, lng, displayName: m.matchedAddress || q };
+    };
+
     const tryGeocode = async () => {
       setFindingAddress(true);
       try {
-        // Bias toward the US and toward where the user already is so partial
-        // addresses ("123 Main St", "Crestview") have a chance of finding the
-        // right place instead of failing on exact-match.
-        const params = new URLSearchParams({
-          q,
-          format: "json",
-          limit: "5",
-          countrycodes: "us",
-          addressdetails: "0",
-        });
-        const biasCenter = userLocation || mapCenter;
-        if (biasCenter && Number.isFinite(biasCenter.lat) && Number.isFinite(biasCenter.lng)) {
-          // ~2-degree box (roughly 100 mi) around the bias point — `bounded=0`
-          // keeps it as a preference, not a hard restriction.
-          const pad = 2;
-          params.set(
-            "viewbox",
-            `${biasCenter.lng - pad},${biasCenter.lat + pad},${biasCenter.lng + pad},${biasCenter.lat - pad}`,
-          );
-          params.set("bounded", "0");
+        let hit = null;
+        try {
+          hit = await queryNominatim();
+        } catch (nominatimErr) {
+          console.warn("Nominatim error:", nominatimErr);
         }
-        const url = `https://nominatim.openstreetmap.org/search?${params.toString()}`;
-        const response = await fetch(url);
-        if (!response.ok) {
-          setFindMessage(`Address lookup failed: HTTP ${response.status}`);
-          return false;
+        if (!hit) {
+          try {
+            hit = await queryCensus();
+          } catch (censusErr) {
+            console.warn("Census Geocoder error:", censusErr);
+          }
         }
-        const results = await response.json();
-        if (!Array.isArray(results) || results.length === 0) {
+        if (!hit) {
           setFindMessage(`No address match for "${q}". Try adding the city or state.`);
           return false;
         }
-        const lat = Number(results[0].lat);
-        const lng = Number(results[0].lon);
-        if (!Number.isFinite(lat) || !Number.isFinite(lng)) return false;
 
-        setFlyToTarget({ lat, lng, zoom: 17, key: Date.now() });
+        setFlyToTarget({ lat: hit.lat, lng: hit.lng, zoom: 17, key: Date.now() });
         setFollowUser(false);
         setTab("map");
-        setFindMessage(`Found: ${results[0].display_name}`);
+        setFindMessage(`Found: ${hit.displayName}`);
 
         try {
-          await loadNearbyPoints({ lat, lng });
+          await loadNearbyPoints({ lat: hit.lat, lng: hit.lng });
         } catch (loadErr) {
           console.error("loadNearbyPoints error:", loadErr);
         }
