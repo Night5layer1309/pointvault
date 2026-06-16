@@ -810,3 +810,18 @@ export async function fetchNearbyVisiblePoints({ companyId, location, radiusFeet
     requested_scope: scope,
   });
 }
+
+// Calls the geocode-address edge function, which tries Nominatim first and
+// falls back to the US Census Geocoder. The function runs server-side so the
+// Census API's missing CORS headers don't block the browser. Returns
+// { lat, lng, displayName, source } on success, or null when both miss.
+export async function geocodeAddress(address, bias) {
+  if (!address || !String(address).trim()) return null;
+  const body = { address: String(address).trim() };
+  if (bias && Number.isFinite(bias.lat) && Number.isFinite(bias.lng)) {
+    body.bias = { lat: Number(bias.lat), lng: Number(bias.lng) };
+  }
+  const { data, error } = await supabase.functions.invoke("geocode-address", { body });
+  if (error) throw error;
+  return data?.match || null;
+}
