@@ -1764,7 +1764,7 @@ export default function SurveyPointAppPrototype() {
       )}
 
       <main className={`mx-auto grid max-w-7xl gap-4 px-4 py-4 ${tab === "map" ? "lg:grid-cols-[1fr_380px]" : ""}`}>
-        <section className="space-y-4">
+        <section className="min-w-0 space-y-4">
           <Card className="hidden rounded-3xl border-0 shadow-sm md:block">
             <CardContent className="p-4">
               <form
