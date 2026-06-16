@@ -1264,8 +1264,14 @@ export default function SurveyPointAppPrototype() {
         setTab("map");
         setFindMessage(`Found: ${hit.displayName}`);
 
+        // After a search the user is exploring an area away from their GPS,
+        // so the "within X feet of me" filter would hide every loaded point.
+        // Drop that filter and load a generous 5-mile radius around the
+        // searched address so they actually see what's there.
+        const searchLoadRadiusFt = 26400;
+        setMaxDistanceFeet(999999999);
         try {
-          await loadNearbyPoints({ lat: hit.lat, lng: hit.lng });
+          await loadNearbyPoints({ lat: hit.lat, lng: hit.lng }, searchLoadRadiusFt);
         } catch (loadErr) {
           console.error("loadNearbyPoints error:", loadErr);
         }
@@ -1292,7 +1298,7 @@ export default function SurveyPointAppPrototype() {
     setFindMessage("No matching point or address found.");
   };
 
-  const loadNearbyPoints = async (locationOverride = null) => {
+  const loadNearbyPoints = async (locationOverride = null, radiusOverride = null) => {
     const location = locationOverride || mapCenter || userLocation;
 
     if (!activeCompany?.id) {
@@ -1311,7 +1317,7 @@ export default function SurveyPointAppPrototype() {
     const { data, error } = await fetchNearbyCompanyPoints({
       companyId: activeCompany.id,
       location,
-      radiusFeet: maxDistanceFeet,
+      radiusFeet: radiusOverride != null ? Number(radiusOverride) : maxDistanceFeet,
       resultLimit,
     });
 
