@@ -1296,13 +1296,15 @@ export default function SurveyPointAppPrototype() {
         setFindMessage(`Found: ${hit.displayName}`);
 
         // After a search the user is exploring an area away from their GPS,
-        // so the "within X feet of me" filter would hide every loaded point.
-        // Drop that filter and load a generous 5-mile radius around the
-        // searched address so they actually see what's there.
-        const searchLoadRadiusFt = 26400;
+        // so both the "within X feet of me" display filter and the on-site
+        // distance limit would hide everything. Drop both and let the RPC
+        // return the closest points (sorted by distance) to the searched
+        // address — capped by result_limit, not by radius. That way even if
+        // their nearest points are 15+ mi from the address they still show up
+        // and the user can see where their work is in relation to the search.
         setMaxDistanceFeet(999999999);
         try {
-          await loadNearbyPoints({ lat: hit.lat, lng: hit.lng }, searchLoadRadiusFt);
+          await loadNearbyPoints({ lat: hit.lat, lng: hit.lng }, 999999999);
         } catch (loadErr) {
           console.error("loadNearbyPoints error:", loadErr);
         }
