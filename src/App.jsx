@@ -347,6 +347,17 @@ const BASEMAPS = {
 function ClusteredPoints({ points, selectedPoint, onSelectPoint, onClusterZoom }) {
   const map = useMap();
   useEffect(() => {
+    // Make Leaflet recompute its container size before we drop markers in.
+    // The Tailwind/grid layout can finish settling after the map mounts (esp.
+    // with the `min-w-0` we set on the section to keep Import/Team from
+    // widening the page) — leaving markerCluster thinking the viewport is 0
+    // and silently skipping every marker that "doesn't fit".
+    try {
+      map.invalidateSize();
+    } catch (sizeErr) {
+      console.warn("invalidateSize failed:", sizeErr);
+    }
+
     const cluster = L.markerClusterGroup({
       showCoverageOnHover: false,
       spiderfyOnMaxZoom: true,
@@ -404,6 +415,25 @@ function ClusteredPoints({ points, selectedPoint, onSelectPoint, onClusterZoom }
     };
   }, [map, points, selectedPoint, onSelectPoint]);
 
+  return null;
+}
+
+function MapSizeWatcher() {
+  const map = useMap();
+  useEffect(() => {
+    // Settle once on mount, then again after the next animation frame in case
+    // the surrounding flex/grid layout finalized after Leaflet measured.
+    const settle = () => {
+      try {
+        map.invalidateSize({ animate: false, pan: false });
+      } catch {
+        /* ignore — Leaflet sometimes throws during a teardown race */
+      }
+    };
+    settle();
+    const raf = requestAnimationFrame(settle);
+    return () => cancelAnimationFrame(raf);
+  }, [map]);
   return null;
 }
 
@@ -501,6 +531,7 @@ function GisMap({ points, selectedPoint, userLocation, followUser, onUserPan, on
             if (layer.maxZoom) layerProps.maxZoom = layer.maxZoom;
             return <TileLayer key={`${basemap}-${index}`} {...layerProps} />;
           })}
+          <MapSizeWatcher />
           <MapInteractionCapture onUserInteract={onUserPan} />
           <MapCenterTracker onCenterChange={onMapCenterChange} />
           <MapFlyToTarget target={flyToTarget} />
