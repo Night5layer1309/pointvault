@@ -1244,19 +1244,42 @@ export default function SurveyPointAppPrototype() {
     const tryGeocode = async () => {
       setFindingAddress(true);
       try {
-        const url = `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(q)}&format=json&limit=1`;
+        // Bias toward the US and toward where the user already is so partial
+        // addresses ("123 Main St", "Crestview") have a chance of finding the
+        // right place instead of failing on exact-match.
+        const params = new URLSearchParams({
+          q,
+          format: "json",
+          limit: "5",
+          countrycodes: "us",
+          addressdetails: "0",
+        });
+        const biasCenter = userLocation || mapCenter;
+        if (biasCenter && Number.isFinite(biasCenter.lat) && Number.isFinite(biasCenter.lng)) {
+          // ~2-degree box (roughly 100 mi) around the bias point — `bounded=0`
+          // keeps it as a preference, not a hard restriction.
+          const pad = 2;
+          params.set(
+            "viewbox",
+            `${biasCenter.lng - pad},${biasCenter.lat + pad},${biasCenter.lng + pad},${biasCenter.lat - pad}`,
+          );
+          params.set("bounded", "0");
+        }
+        const url = `https://nominatim.openstreetmap.org/search?${params.toString()}`;
         const response = await fetch(url);
         if (!response.ok) {
           setFindMessage(`Address lookup failed: HTTP ${response.status}`);
           return false;
         }
         const results = await response.json();
-        if (!Array.isArray(results) || results.length === 0) return false;
+        if (!Array.isArray(results) || results.length === 0) {
+          setFindMessage(`No address match for "${q}". Try adding the city or state.`);
+          return false;
+        }
         const lat = Number(results[0].lat);
         const lng = Number(results[0].lon);
         if (!Number.isFinite(lat) || !Number.isFinite(lng)) return false;
 
-        setQuery("");
         setFlyToTarget({ lat, lng, zoom: 17, key: Date.now() });
         setFollowUser(false);
         setTab("map");
@@ -1632,7 +1655,6 @@ export default function SurveyPointAppPrototype() {
                 event.preventDefault();
                 if (!query.trim()) return;
                 findOrGeocode();
-                setMobileSearchOpen(false);
               }}
               className="grid gap-2"
             >
@@ -1719,6 +1741,66 @@ export default function SurveyPointAppPrototype() {
               >
                 <Database size={16} className="mr-2" /> {loadingPoints ? "Loading..." : "Load Points"}
               </Button>
+
+              <div className="my-2 h-px bg-slate-200" />
+              <div className="text-xs font-bold uppercase tracking-wide text-slate-500">Basemap</div>
+              <div className="grid grid-cols-2 gap-1">
+                {[
+                  { id: "aerial", label: "Aerial", icon: Satellite },
+                  { id: "hybrid", label: "Hybrid", icon: Layers },
+                  { id: "streets", label: "Streets", icon: Map },
+                  { id: "topo", label: "Topo", icon: Layers },
+                  { id: "usgs", label: "USGS Hi-Res", icon: Satellite },
+                ].map((option) => {
+                  const Icon = option.icon;
+                  const active = basemap === option.id;
+                  return (
+                    <button
+                      key={option.id}
+                      onClick={() => { setBasemap(option.id); setMobileMenuOpen(false); }}
+                      className={`flex items-center gap-2 rounded-xl px-3 py-2 text-left text-sm font-semibold ${
+                        active ? "bg-slate-950 text-white" : "bg-slate-50 text-slate-800 hover:bg-slate-100"
+                      }`}
+                    >
+                      <Icon size={14} /> {option.label}
+                    </button>
+                  );
+                })}
+              </div>
+
+              <div className="mt-2 text-xs font-bold uppercase tracking-wide text-slate-500">Overlays &amp; GPS</div>
+              <button
+                onClick={() => setShowParcels((v) => !v)}
+                className={`flex items-center justify-between gap-2 rounded-xl px-3 py-2 text-left text-sm font-semibold ${
+                  showParcels ? "bg-slate-950 text-white" : "bg-slate-50 text-slate-800 hover:bg-slate-100"
+                }`}
+              >
+                <span className="flex items-center gap-2"><Filter size={14} /> Parcels</span>
+                <span className="text-xs">{showParcels ? "on" : "off"}</span>
+              </button>
+              <button
+                onClick={() => setFollowUser((v) => !v)}
+                disabled={!userLocation}
+                className={`flex items-center justify-between gap-2 rounded-xl px-3 py-2 text-left text-sm font-semibold ${
+                  !userLocation
+                    ? "cursor-not-allowed bg-slate-100 text-slate-400"
+                    : followUser
+                      ? "bg-slate-950 text-white"
+                      : "bg-slate-50 text-slate-800 hover:bg-slate-100"
+                }`}
+              >
+                <span className="flex items-center gap-2"><LocateFixed size={14} /> Follow GPS</span>
+                <span className="text-xs">{followUser ? "on" : "off"}</span>
+              </button>
+              {!followUser && userLocation && (
+                <button
+                  onClick={() => { setFollowUser(true); setMobileMenuOpen(false); }}
+                  className="flex items-center gap-2 rounded-xl bg-slate-50 px-3 py-2 text-left text-sm font-semibold text-slate-800 hover:bg-slate-100"
+                >
+                  <Target size={14} /> Recenter
+                </button>
+              )}
+
               {installPrompt && (
                 <Button onClick={() => { triggerInstall(); setMobileMenuOpen(false); }} variant="secondary" className="w-full rounded-2xl py-3">
                   <Download size={16} className="mr-2" /> Install App
@@ -1908,7 +1990,7 @@ export default function SurveyPointAppPrototype() {
                 <Button
                   onClick={() => setLayersOpen((v) => !v)}
                   variant="secondary"
-                  className="rounded-2xl px-4 py-3"
+                  className="hidden rounded-2xl px-4 py-3 md:inline-flex"
                 >
                   <Layers size={16} className="mr-2" /> Layers
                   <ChevronDown size={14} className={`ml-2 ${layersOpen ? "rotate-180" : ""} transition`} />
@@ -1916,7 +1998,7 @@ export default function SurveyPointAppPrototype() {
               </div>
 
               {layersOpen && (
-                <div className="rounded-2xl border border-slate-200 bg-white p-3 shadow-sm">
+                <div className="hidden rounded-2xl border border-slate-200 bg-white p-3 shadow-sm md:block">
                   <div className="mb-2 text-xs font-bold uppercase tracking-wide text-slate-500">Basemap</div>
                   <div className="grid grid-cols-2 gap-1 md:grid-cols-5">
                     {[
