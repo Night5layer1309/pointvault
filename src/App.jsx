@@ -1314,6 +1314,13 @@ export default function SurveyPointAppPrototype() {
         setTab("map");
         setFindMessage(`Found: ${hit.displayName}`);
 
+        // CRITICAL: clear the search box. The query is also used as a text
+        // filter over loaded points (id / name / job / source file / etc.) so
+        // leaving "1218 alford rd ponce de leon..." in there filters out every
+        // single point that doesn't contain that exact text — i.e. all of
+        // them. That was the "Loaded 500 / Visible 0" bug.
+        setQuery("");
+
         // After a search the user is exploring an area away from their GPS,
         // so both the "within X feet of me" display filter and the on-site
         // distance limit would hide everything. Drop both and let the RPC
