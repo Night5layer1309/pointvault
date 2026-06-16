@@ -1057,7 +1057,6 @@ export default function SurveyPointAppPrototype() {
   const [followUser, setFollowUser] = useState(true);
   const [installPrompt, setInstallPrompt] = useState(null);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
-  const [mobileNavOpen, setMobileNavOpen] = useState(false);
   const [mobileSearchOpen, setMobileSearchOpen] = useState(false);
   const [layersOpen, setLayersOpen] = useState(false);
   const [bulkSharing, setBulkSharing] = useState(false);
@@ -1708,9 +1707,11 @@ export default function SurveyPointAppPrototype() {
         )}
       </header>
 
-      {/* Mobile slide-in menu overlay */}
+      {/* Mobile slide-in menu overlay. Leaflet's tile-container pane is z=200
+          and shadow panes go up to ~700, so we need to clear those decisively
+          to avoid the menu hiding behind the map. */}
       {mobileMenuOpen && (
-        <div className="fixed inset-0 z-[60] md:hidden" onClick={() => setMobileMenuOpen(false)}>
+        <div className="fixed inset-0 z-[2000] md:hidden" onClick={() => setMobileMenuOpen(false)}>
           <div className="absolute inset-0 bg-black/50" />
           <div
             className="absolute right-0 top-0 h-full w-72 bg-white p-4 shadow-xl"
@@ -1727,80 +1728,27 @@ export default function SurveyPointAppPrototype() {
               </button>
             </div>
             <div className="mt-4 grid gap-2">
-              <Button onClick={() => { locateUser(); setMobileMenuOpen(false); }} className="w-full rounded-2xl py-3">
-                <LocateFixed size={16} className="mr-2" /> You Are Here
-              </Button>
-              <Button onClick={() => { startGpsWatch(); setMobileMenuOpen(false); }} variant="secondary" className="w-full rounded-2xl py-3">
-                <RefreshCw size={16} className="mr-2" /> {gpsWatchId ? "Stop GPS" : "Track GPS"}
-              </Button>
-              <Button
-                onClick={() => { loadNearbyPoints(); setMobileMenuOpen(false); }}
-                variant="secondary"
-                className="w-full rounded-2xl py-3"
-                disabled={loadingPoints || (!userLocation && !mapCenter)}
-              >
-                <Database size={16} className="mr-2" /> {loadingPoints ? "Loading..." : "Load Points"}
-              </Button>
-
-              <div className="my-2 h-px bg-slate-200" />
-              <div className="text-xs font-bold uppercase tracking-wide text-slate-500">Basemap</div>
-              <div className="grid grid-cols-2 gap-1">
-                {[
-                  { id: "aerial", label: "Aerial", icon: Satellite },
-                  { id: "hybrid", label: "Hybrid", icon: Layers },
-                  { id: "streets", label: "Streets", icon: Map },
-                  { id: "topo", label: "Topo", icon: Layers },
-                  { id: "usgs", label: "USGS Hi-Res", icon: Satellite },
-                ].map((option) => {
-                  const Icon = option.icon;
-                  const active = basemap === option.id;
-                  return (
-                    <button
-                      key={option.id}
-                      onClick={() => { setBasemap(option.id); setMobileMenuOpen(false); }}
-                      className={`flex items-center gap-2 rounded-xl px-3 py-2 text-left text-sm font-semibold ${
-                        active ? "bg-slate-950 text-white" : "bg-slate-50 text-slate-800 hover:bg-slate-100"
-                      }`}
-                    >
-                      <Icon size={14} /> {option.label}
-                    </button>
-                  );
-                })}
-              </div>
-
-              <div className="mt-2 text-xs font-bold uppercase tracking-wide text-slate-500">Overlays &amp; GPS</div>
-              <button
-                onClick={() => setShowParcels((v) => !v)}
-                className={`flex items-center justify-between gap-2 rounded-xl px-3 py-2 text-left text-sm font-semibold ${
-                  showParcels ? "bg-slate-950 text-white" : "bg-slate-50 text-slate-800 hover:bg-slate-100"
-                }`}
-              >
-                <span className="flex items-center gap-2"><Filter size={14} /> Parcels</span>
-                <span className="text-xs">{showParcels ? "on" : "off"}</span>
-              </button>
-              <button
-                onClick={() => setFollowUser((v) => !v)}
-                disabled={!userLocation}
-                className={`flex items-center justify-between gap-2 rounded-xl px-3 py-2 text-left text-sm font-semibold ${
-                  !userLocation
-                    ? "cursor-not-allowed bg-slate-100 text-slate-400"
-                    : followUser
-                      ? "bg-slate-950 text-white"
-                      : "bg-slate-50 text-slate-800 hover:bg-slate-100"
-                }`}
-              >
-                <span className="flex items-center gap-2"><LocateFixed size={14} /> Follow GPS</span>
-                <span className="text-xs">{followUser ? "on" : "off"}</span>
-              </button>
-              {!followUser && userLocation && (
-                <button
-                  onClick={() => { setFollowUser(true); setMobileMenuOpen(false); }}
-                  className="flex items-center gap-2 rounded-xl bg-slate-50 px-3 py-2 text-left text-sm font-semibold text-slate-800 hover:bg-slate-100"
-                >
-                  <Target size={14} /> Recenter
-                </button>
-              )}
-
+              {[
+                { id: "map", label: "Map", icon: Map },
+                { id: "points", label: "Points", icon: List },
+                { id: "import", label: "Add & Import", icon: Upload },
+                { id: "team", label: "Team & Billing", icon: Users },
+                { id: "settings", label: "Settings", icon: SettingsIcon },
+              ].map((option) => {
+                const Icon = option.icon;
+                const active = tab === option.id;
+                return (
+                  <button
+                    key={option.id}
+                    onClick={() => { setTab(option.id); setMobileMenuOpen(false); }}
+                    className={`flex items-center gap-2 rounded-2xl px-4 py-3 text-left text-sm font-semibold ${
+                      active ? "bg-blue-600 text-white" : "bg-slate-50 text-slate-900 hover:bg-slate-100"
+                    }`}
+                  >
+                    <Icon size={16} /> {option.label}
+                  </button>
+                );
+              })}
               {installPrompt && (
                 <Button onClick={() => { triggerInstall(); setMobileMenuOpen(false); }} variant="secondary" className="w-full rounded-2xl py-3">
                   <Download size={16} className="mr-2" /> Install App
@@ -1894,65 +1842,6 @@ export default function SurveyPointAppPrototype() {
             </CardContent>
           </Card>
 
-          {/* Mobile: backdrop when nav is open */}
-          {mobileNavOpen && (
-            <div
-              className="fixed inset-0 z-20 bg-black/50 md:hidden"
-              onClick={() => setMobileNavOpen(false)}
-            />
-          )}
-
-          {/* Mobile: page dropdown */}
-          <Card className="relative z-30 rounded-3xl border-0 shadow-sm md:hidden">
-            <CardContent className="p-3">
-              <button
-                onClick={() => setMobileNavOpen((v) => !v)}
-                className="flex w-full items-center justify-between rounded-2xl bg-slate-950 px-4 py-3 text-left text-sm font-bold text-white"
-              >
-                <span className="flex items-center gap-2">
-                  {tab === "map" && <><Map size={16} /> Map</>}
-                  {tab === "points" && <><List size={16} /> Points</>}
-                  {tab === "import" && <><Upload size={16} /> Add &amp; Import</>}
-                  {tab === "team" && <><Users size={16} /> Team &amp; Billing</>}
-                  {tab === "settings" && <><SettingsIcon size={16} /> Settings</>}
-                </span>
-                <ChevronDown size={18} className={mobileNavOpen ? "rotate-180 transition" : "transition"} />
-              </button>
-              {mobileNavOpen && (
-                <div className="mt-2 grid gap-1 rounded-2xl bg-slate-100 p-2 dark:bg-slate-900">
-                  {[
-                    { id: "map", label: "Map", icon: Map },
-                    { id: "points", label: "Points (list + detail)", icon: List },
-                    { id: "import", label: "Add & Import", icon: Upload },
-                    { id: "team", label: "Team & Billing", icon: Users },
-                    { id: "settings", label: "Settings", icon: SettingsIcon },
-                  ].map((option) => {
-                    const Icon = option.icon;
-                    const active = tab === option.id;
-                    let cls;
-                    if (active) {
-                      cls = "bg-blue-600 text-white dark:bg-blue-500";
-                    } else if (option.disabled) {
-                      cls = "cursor-not-allowed bg-slate-200 text-slate-400 dark:bg-slate-800 dark:text-slate-600";
-                    } else {
-                      cls = "bg-white text-slate-900 hover:bg-blue-50 dark:bg-slate-700 dark:text-white dark:hover:bg-slate-600";
-                    }
-                    return (
-                      <button
-                        key={option.id}
-                        disabled={option.disabled}
-                        onClick={() => { setTab(option.id); setMobileNavOpen(false); }}
-                        className={`flex items-center gap-2 rounded-xl px-3 py-3 text-left text-sm font-semibold ${cls}`}
-                      >
-                        <Icon size={16} /> {option.label}
-                      </button>
-                    );
-                  })}
-                </div>
-              )}
-            </CardContent>
-          </Card>
-
           {/* Desktop: full button row */}
           <Card className="hidden rounded-3xl border-0 shadow-sm md:block">
             <CardContent className="flex flex-wrap gap-2 p-3">
@@ -1990,7 +1879,7 @@ export default function SurveyPointAppPrototype() {
                 <Button
                   onClick={() => setLayersOpen((v) => !v)}
                   variant="secondary"
-                  className="hidden rounded-2xl px-4 py-3 md:inline-flex"
+                  className="rounded-2xl px-4 py-3"
                 >
                   <Layers size={16} className="mr-2" /> Layers
                   <ChevronDown size={14} className={`ml-2 ${layersOpen ? "rotate-180" : ""} transition`} />
@@ -1998,7 +1887,7 @@ export default function SurveyPointAppPrototype() {
               </div>
 
               {layersOpen && (
-                <div className="hidden rounded-2xl border border-slate-200 bg-white p-3 shadow-sm md:block">
+                <div className="rounded-2xl border border-slate-200 bg-white p-3 shadow-sm">
                   <div className="mb-2 text-xs font-bold uppercase tracking-wide text-slate-500">Basemap</div>
                   <div className="grid grid-cols-2 gap-1 md:grid-cols-5">
                     {[
