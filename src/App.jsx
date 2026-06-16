@@ -507,11 +507,30 @@ function MapFlyToTarget({ target }) {
   const map = useMap();
   useEffect(() => {
     if (!target) return;
-    if (target.bounds) {
-      map.fitBounds(target.bounds, { padding: [40, 40], maxZoom: target.maxZoom || 17 });
-    } else {
-      map.setView([target.lat, target.lng], target.zoom || 17, { animate: true });
-    }
+    // Make Leaflet recompute the container size first — if the layout shifted
+    // (e.g. the user just opened the mobile search panel, which expands the
+    // header), Leaflet's cached size is stale and setView lands the new center
+    // off-screen, making the map look like it never moved.
+    try { map.invalidateSize({ animate: false, pan: false }); } catch { /* ignore */ }
+
+    // Hard-snap (animate:false) so a fresh setView can't be interrupted by a
+    // pending pan/zoom animation. Run once on the next frame so any unmount of
+    // RecenterMap from setFollowUser(false) finishes first and can't snap us
+    // straight back to GPS afterward.
+    const apply = () => {
+      try {
+        if (target.bounds) {
+          map.fitBounds(target.bounds, { padding: [40, 40], maxZoom: target.maxZoom || 17, animate: false });
+        } else if (Number.isFinite(target.lat) && Number.isFinite(target.lng)) {
+          map.setView([target.lat, target.lng], target.zoom || 17, { animate: false });
+        }
+      } catch (err) {
+        console.warn("MapFlyToTarget setView failed:", err, target);
+      }
+    };
+    apply();
+    const raf = requestAnimationFrame(apply);
+    return () => cancelAnimationFrame(raf);
   }, [target, map]);
   return null;
 }
