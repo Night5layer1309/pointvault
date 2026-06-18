@@ -33,9 +33,11 @@ import {
   getInviteTokenFromUrl,
   openBillingPortal,
   removeCompanyMember,
+  lookupInvite,
   signInWithEmail,
   signInWithGoogle,
   signInWithPassword,
+  signUpWithPassword,
   signOut,
   startCheckoutForCompany,
   syncStripeQuantity,
@@ -123,8 +125,20 @@ export function SignInPanel() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const inviteToken = getInviteTokenFromUrl();
+  const [invitePreview, setInvitePreview] = useState(null);
   const [message, setMessage] = useState("");
   const [sending, setSending] = useState(false);
+
+  // Resolve the invite token to a company name (or "invalid") so the user sees
+  // "Joining: Acme Surveyors" instead of a UUID.
+  useEffect(() => {
+    if (!inviteToken) return;
+    let cancelled = false;
+    lookupInvite(inviteToken)
+      .then((preview) => { if (!cancelled) setInvitePreview(preview); })
+      .catch(() => { if (!cancelled) setInvitePreview({ valid: false, reason: "lookup_failed" }); });
+    return () => { cancelled = true; };
+  }, [inviteToken]);
 
   const continueWithGoogle = async () => {
     setSending(true);
@@ -138,43 +152,120 @@ export function SignInPanel() {
     }
   };
 
-  const emailMeLink = async () => {
-    if (!email.trim()) return;
-    setSending(true);
-    setMessage("Sending you a sign-in link...");
-    try {
-      await signInWithEmail(email.trim());
-      setMessage(
-        "Sent. Open the email we just sent you and tap the link to finish signing in. " +
-        "Check your spam folder if you don't see it in a minute.",
-      );
-    } catch (error) {
-      setMessage(error?.message || "Could not send the sign-in link.");
-    } finally {
-      setSending(false);
-    }
+  const sendEmailLink = async (emailToUse) => {
+    await signInWithEmail(emailToUse);
+    setMessage(
+      "Sign-in link sent. Open the email we just sent you and tap the link to finish. " +
+      "Check your spam folder if you don't see it in a minute.",
+    );
   };
 
-  const signInWithPwd = async () => {
-    if (!email.trim() || !password) return;
+  // The smart primary button: handles both sign-in and sign-up depending on
+  // what the user typed and whether an account already exists. The user asked
+  // for this UX: "if they put their email and password in and don't have an
+  // account, keep password as their new password. if they don't [enter a
+  // password], just send email to them."
+  const continueWithEmail = async () => {
+    const cleanEmail = email.trim();
+    if (!cleanEmail) return;
     setSending(true);
-    setMessage("Signing in...");
+    setMessage("");
+
+    // No password: send a one-time sign-in link. This works for both new and
+    // returning users; Supabase creates the account on first link-click.
+    if (!password) {
+      try {
+        await sendEmailLink(cleanEmail);
+      } catch (error) {
+        setMessage(error?.message || "Could not send the sign-in link.");
+      } finally {
+        setSending(false);
+      }
+      return;
+    }
+
+    // Has password: try password sign-in first.
     try {
-      await signInWithPassword(email.trim(), password);
+      await signInWithPassword(cleanEmail, password);
       setMessage("Signed in.");
-    } catch (error) {
-      const msg = error?.message || "Could not sign in.";
-      if (/invalid login credentials|invalid email or password/i.test(msg)) {
-        setMessage(
-          "Wrong email or password. New here? Use 'Continue with Google' or 'Email me a sign-in link' below — both create your account on the spot.",
-        );
-      } else {
-        setMessage(msg);
+      setSending(false);
+      return;
+    } catch (signInErr) {
+      const errMsg = signInErr?.message || "";
+      if (!/invalid login credentials|invalid email or password/i.test(errMsg)) {
+        setMessage(errMsg || "Could not sign in.");
+        setSending(false);
+        return;
+      }
+      // Wrong-creds error covers both "wrong password" and "no such email".
+      // Try to register them with the password they just typed.
+      try {
+        const result = await signUpWithPassword(cleanEmail, password);
+        const identities = result?.user?.identities;
+        // Supabase quirk when email confirmation is ON: signUp on an existing
+        // email succeeds with user.identities === [] (no enumeration leak).
+        // Treat that as "account exists, wrong password" and fall back to the
+        // recovery email link.
+        if (Array.isArray(identities) && identities.length === 0) {
+          setMessage("That email already has an account. We just sent you a sign-in link to get back in.");
+          try { await signInWithEmail(cleanEmail); } catch { /* ignore */ }
+        } else if (result?.session) {
+          setMessage("Account created and signed in.");
+        } else {
+          setMessage("Account created! Check your email to verify your address, then you're in.");
+        }
+      } catch (signUpErr) {
+        const upMsg = signUpErr?.message || "";
+        if (/already registered|user already exists/i.test(upMsg)) {
+          setMessage("That email already has an account. We just sent you a sign-in link to get back in.");
+          try { await signInWithEmail(cleanEmail); } catch { /* ignore */ }
+        } else {
+          setMessage(upMsg || "Could not create account.");
+        }
       }
     } finally {
       setSending(false);
     }
   };
+
+  // What the primary button should look like, given the state of the password field.
+  const primaryLabel = password ? "Sign In or Create Account" : "Email Me a Sign-In Link";
+  const PrimaryIcon = password ? null : Mail;
+
+  // Friendly banner about the invite (or its failure).
+  let inviteBanner = null;
+  if (inviteToken) {
+    if (invitePreview === null) {
+      inviteBanner = (
+        <div className="mb-4 rounded-2xl border border-blue-100 bg-blue-50 p-3 text-xs font-semibold text-blue-950">
+          Checking your invite...
+        </div>
+      );
+    } else if (invitePreview.valid) {
+      inviteBanner = (
+        <div className="mb-4 rounded-2xl border border-blue-200 bg-blue-50 p-3 text-sm leading-5 text-blue-950">
+          <div className="font-bold">You're joining <span className="underline">{invitePreview.company_name}</span></div>
+          <div className="mt-1 text-xs font-semibold opacity-80">
+            Sign in (or create an account) with {invitePreview.email_locked ? "the email that was invited" : "any email"} and you'll be added to {invitePreview.company_name} automatically as {invitePreview.role === "admin" ? "an admin" : "a member"}.
+          </div>
+        </div>
+      );
+    } else {
+      const reason =
+        invitePreview.reason === "expired" ? "This invite has expired." :
+        invitePreview.reason === "used_up" ? "This invite has already been used up." :
+        invitePreview.reason === "not_found" ? "We couldn't find that invite — the link may be wrong." :
+        "We couldn't verify that invite.";
+      inviteBanner = (
+        <div className="mb-4 rounded-2xl border border-amber-200 bg-amber-50 p-3 text-sm leading-5 text-amber-900">
+          <div className="font-bold">{reason}</div>
+          <div className="mt-1 text-xs font-semibold opacity-80">
+            You can still sign in and create your own company below.
+          </div>
+        </div>
+      );
+    }
+  }
 
   return (
     <div className="mx-auto flex min-h-screen max-w-xl items-center px-4 py-10">
@@ -188,12 +279,7 @@ export function SignInPanel() {
             </div>
           </div>
 
-          {inviteToken && (
-            <div className="mb-4 rounded-2xl border border-blue-100 bg-blue-50 p-3 text-xs font-semibold text-blue-950 break-all">
-              Invite detected — sign in (or create an account) with the email that was invited and you'll be added to that company automatically.
-              <div className="mt-1 break-all opacity-80">Token: {inviteToken}</div>
-            </div>
-          )}
+          {inviteBanner}
 
           {/* Primary: one-click Google. Most users get in with no email step. */}
           <Button
@@ -228,34 +314,25 @@ export function SignInPanel() {
           <input
             type="password"
             className="mb-3 w-full rounded-2xl border border-slate-200 px-4 py-3 text-sm outline-none focus:border-blue-400"
-            placeholder="Password (leave blank if you don't have one)"
+            placeholder="Password (leave blank to get a sign-in link instead)"
             value={password}
             onChange={(event) => setPassword(event.target.value)}
-            onKeyDown={(event) => { if (event.key === "Enter" && password) signInWithPwd(); }}
+            onKeyDown={(event) => { if (event.key === "Enter" && email.trim()) continueWithEmail(); }}
             autoComplete="current-password"
           />
-          <div className="grid gap-2">
-            <Button
-              onClick={signInWithPwd}
-              disabled={sending || !email.trim() || !password}
-              className="w-full rounded-2xl py-5"
-            >
-              Sign In
-            </Button>
-            <Button
-              onClick={emailMeLink}
-              disabled={sending || !email.trim()}
-              variant="secondary"
-              className="w-full rounded-2xl py-5"
-            >
-              <Mail size={16} className="mr-2" /> Email me a sign-in link
-            </Button>
-          </div>
+          <Button
+            onClick={continueWithEmail}
+            disabled={sending || !email.trim()}
+            className="w-full rounded-2xl py-5"
+          >
+            {PrimaryIcon && <PrimaryIcon size={16} className="mr-2" />}
+            {primaryLabel}
+          </Button>
 
           <p className="mt-4 text-xs leading-5 text-slate-500">
-            <strong>First time?</strong> Use <strong>Continue with Google</strong> (fastest) or
-            type your email and tap <strong>Email me a sign-in link</strong> — both create your
-            account on the spot. No separate sign-up step.
+            {password
+              ? "We'll sign you in if you already have an account, or create one with this password if it's your first time."
+              : "Type a password to sign in or create an account in one tap. Leave it blank to get a one-time link by email instead."}
           </p>
 
           {message && (
@@ -278,12 +355,28 @@ export function CompanySetupPanel({ session, onReady }) {
       || "",
   );
   const [inviteToken, setInviteToken] = useState(inviteFromUrl);
+  const [invitePreview, setInvitePreview] = useState(null);
   // When an invite is in the URL we lead with Join. Otherwise lead with Create
   // and let the user expand the "have an invite?" path if they need it.
   const [mode, setMode] = useState(inviteFromUrl ? "join" : "create");
   const [message, setMessage] = useState("");
   const [loading, setLoading] = useState(true);
   const [working, setWorking] = useState(false);
+
+  // Look up the company name behind the invite token so the join card says
+  // "Joining Acme Surveyors" instead of "Confirm your invite token".
+  useEffect(() => {
+    const cleanToken = (inviteToken || "").trim();
+    if (!cleanToken) {
+      setInvitePreview(null);
+      return undefined;
+    }
+    let cancelled = false;
+    lookupInvite(cleanToken)
+      .then((preview) => { if (!cancelled) setInvitePreview(preview); })
+      .catch(() => { if (!cancelled) setInvitePreview({ valid: false, reason: "lookup_failed" }); });
+    return () => { cancelled = true; };
+  }, [inviteToken]);
 
   const load = async () => {
     setLoading(true);
@@ -373,14 +466,34 @@ export function CompanySetupPanel({ session, onReady }) {
 
           {isJoin ? (
             <div className="space-y-3">
+              {invitePreview?.valid && (
+                <div className="rounded-2xl border border-blue-200 bg-blue-50 p-4 text-sm leading-5 text-blue-950">
+                  <div className="text-xs font-semibold uppercase tracking-wide opacity-70">Joining</div>
+                  <div className="mt-1 text-xl font-black">{invitePreview.company_name}</div>
+                  <div className="mt-1 text-xs font-semibold opacity-80">
+                    You'll join as {invitePreview.role === "admin" ? "an admin" : "a member"}.
+                  </div>
+                </div>
+              )}
+              {invitePreview && !invitePreview.valid && (
+                <div className="rounded-2xl border border-amber-200 bg-amber-50 p-3 text-xs font-semibold text-amber-900">
+                  {invitePreview.reason === "expired"
+                    ? `That invite expired${invitePreview.company_name ? ` (for ${invitePreview.company_name})` : ""}. Ask for a fresh one or create your own company.`
+                    : invitePreview.reason === "used_up"
+                      ? `That invite has been used up${invitePreview.company_name ? ` (for ${invitePreview.company_name})` : ""}. Ask the company owner for a new link.`
+                      : invitePreview.reason === "not_found"
+                        ? "We couldn't find that invite. Double-check the code, or create your own company."
+                        : "We couldn't verify that invite."}
+                </div>
+              )}
               <input
                 className="w-full rounded-2xl border border-slate-200 px-4 py-3 text-sm outline-none focus:border-blue-400"
                 placeholder="Invite token"
                 value={inviteToken}
                 onChange={(e) => setInviteToken(e.target.value)}
               />
-              <Button onClick={accept} disabled={working || !inviteToken.trim()} className="w-full rounded-2xl py-5">
-                <ShieldCheck size={16} className="mr-2" /> Join Company
+              <Button onClick={accept} disabled={working || !inviteToken.trim() || invitePreview?.valid === false} className="w-full rounded-2xl py-5">
+                <ShieldCheck size={16} className="mr-2" /> {invitePreview?.valid ? `Join ${invitePreview.company_name}` : "Join Company"}
               </Button>
               <button
                 type="button"

@@ -40,6 +40,37 @@ export async function signInWithPassword(email, password) {
   return data;
 }
 
+// Sign up with email + password. Used by the "smart" sign-in flow as a
+// fallback when password sign-in fails because the email isn't registered:
+// instead of erroring at the user, we register them with the password they
+// just typed. If the project requires email confirmation, the user will get a
+// verification email; otherwise the session is created immediately.
+export async function signUpWithPassword(email, password) {
+  const inviteToken = getInviteTokenFromUrl();
+  const redirect = new URL(window.location.origin);
+  if (inviteToken) redirect.searchParams.set("invite", inviteToken);
+
+  const { data, error } = await supabase.auth.signUp({
+    email,
+    password,
+    options: { emailRedirectTo: redirect.toString() },
+  });
+  if (error) throw error;
+  return data;
+}
+
+// Read an invite token (per-email or open/QR) and return the inviting
+// company's name + role so the sign-in screen can show "Join Acme Surveyors"
+// instead of an opaque UUID. Returns { valid, company_name?, role?, reason? }.
+export async function lookupInvite(token) {
+  if (!token) return null;
+  const { data, error } = await supabase.rpc("lookup_company_invite", {
+    invite_token: token,
+  });
+  if (error) throw error;
+  return data;
+}
+
 // One-click Google sign-in / sign-up. Requires Google to be enabled as a
 // provider in the Supabase Auth → Providers settings (and the project's site
 // URL added to Google's authorized redirect URIs). If a returning invite token
