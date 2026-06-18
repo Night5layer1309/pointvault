@@ -39,8 +39,8 @@ async function syncSubscriptionToCompany(subscriptionId: string) {
     : null;
 
   // Subscribed companies get an unlimited seat_limit; canceled / unpaid /
-  // past_due drop back to a small free-tier seat_limit so the existing
-  // accept_company_invitation seat guard kicks in.
+  // past_due drop back to the 1-seat free tier so the existing
+  // accept_company_invitation seat guard kicks in (owner only, no invites).
   const activeLikeStatuses = ["trialing", "active"];
   const isActive = activeLikeStatuses.includes(subscription.status);
 
@@ -50,7 +50,7 @@ async function syncSubscriptionToCompany(subscriptionId: string) {
     stripe_price_id: priceId,
     stripe_current_period_end: periodEnd,
     plan_status: isActive ? "active" : subscription.status,
-    seat_limit: isActive ? null : 3,
+    seat_limit: isActive ? null : 1,
   };
 
   const { error } = await admin.from("companies").update(update).eq("id", companyId);

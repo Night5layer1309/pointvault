@@ -34,6 +34,7 @@ import {
   openBillingPortal,
   removeCompanyMember,
   signInWithEmail,
+  signInWithGoogle,
   signInWithPassword,
   signOut,
   startCheckoutForCompany,
@@ -122,22 +123,33 @@ export function SignInPanel() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const inviteToken = getInviteTokenFromUrl();
-  const [message, setMessage] = useState(
-    inviteToken
-      ? "Sign in with the email address that was invited. Your invite will be waiting after sign-in completes."
-      : "Sign in with email + password, or get a one-time magic-link email."
-  );
+  const [message, setMessage] = useState("");
   const [sending, setSending] = useState(false);
 
-  const sendMagicLink = async () => {
+  const continueWithGoogle = async () => {
+    setSending(true);
+    setMessage("Redirecting to Google...");
+    try {
+      await signInWithGoogle();
+      // The page will redirect; nothing to do after.
+    } catch (error) {
+      setMessage(error?.message || "Could not start Google sign-in.");
+      setSending(false);
+    }
+  };
+
+  const emailMeLink = async () => {
     if (!email.trim()) return;
     setSending(true);
-    setMessage("Sending magic-link email...");
+    setMessage("Sending you a sign-in link...");
     try {
       await signInWithEmail(email.trim());
-      setMessage("Magic link sent. Check your email (and spam) to finish signing in.");
+      setMessage(
+        "Sent. Open the email we just sent you and tap the link to finish signing in. " +
+        "Check your spam folder if you don't see it in a minute.",
+      );
     } catch (error) {
-      setMessage(error?.message || "Could not send magic link.");
+      setMessage(error?.message || "Could not send the sign-in link.");
     } finally {
       setSending(false);
     }
@@ -153,7 +165,9 @@ export function SignInPanel() {
     } catch (error) {
       const msg = error?.message || "Could not sign in.";
       if (/invalid login credentials|invalid email or password/i.test(msg)) {
-        setMessage("Wrong email or password. If you haven't set a password yet, use 'Send Magic Link' instead.");
+        setMessage(
+          "Wrong email or password. New here? Use 'Continue with Google' or 'Email me a sign-in link' below — both create your account on the spot.",
+        );
       } else {
         setMessage(msg);
       }
@@ -170,15 +184,39 @@ export function SignInPanel() {
             <div className="rounded-2xl bg-slate-900 p-3 text-white"><Building2 size={24} /></div>
             <div>
               <h1 className="text-2xl font-black text-slate-950">PointVault</h1>
-              <p className="text-sm text-slate-500">Company account sign-in</p>
+              <p className="text-sm text-slate-500">Sign in or create your account</p>
             </div>
           </div>
+
           {inviteToken && (
             <div className="mb-4 rounded-2xl border border-blue-100 bg-blue-50 p-3 text-xs font-semibold text-blue-950 break-all">
-              Invite detected: {inviteToken}
+              Invite detected — sign in (or create an account) with the email that was invited and you'll be added to that company automatically.
+              <div className="mt-1 break-all opacity-80">Token: {inviteToken}</div>
             </div>
           )}
-          <p className="mb-4 text-sm leading-6 text-slate-600">{message}</p>
+
+          {/* Primary: one-click Google. Most users get in with no email step. */}
+          <Button
+            onClick={continueWithGoogle}
+            disabled={sending}
+            variant="secondary"
+            className="w-full rounded-2xl border border-slate-200 bg-white py-5 text-slate-900 hover:bg-slate-50"
+          >
+            <svg width="18" height="18" viewBox="0 0 48 48" className="mr-3" aria-hidden="true">
+              <path fill="#FFC107" d="M43.6 20.5H42V20H24v8h11.3c-1.6 4.7-6.1 8-11.3 8-6.6 0-12-5.4-12-12s5.4-12 12-12c3.1 0 5.9 1.2 8 3.1l5.7-5.7C34.5 6.1 29.5 4 24 4 12.9 4 4 12.9 4 24s8.9 20 20 20 20-8.9 20-20c0-1.3-.1-2.4-.4-3.5z"/>
+              <path fill="#FF3D00" d="M6.3 14.7l6.6 4.8C14.7 16 19 13 24 13c3.1 0 5.9 1.2 8 3.1l5.7-5.7C34.5 6.1 29.5 4 24 4 16.2 4 9.5 8.4 6.3 14.7z"/>
+              <path fill="#4CAF50" d="M24 44c5.4 0 10.3-2.1 13.9-5.5l-6.4-5.4C29.4 35 26.8 36 24 36c-5.2 0-9.6-3.3-11.3-8l-6.5 5C9.4 39.5 16.1 44 24 44z"/>
+              <path fill="#1976D2" d="M43.6 20.5H42V20H24v8h11.3c-.8 2.3-2.3 4.3-4.2 5.7l6.4 5.4C41.4 36 44 30.5 44 24c0-1.3-.1-2.4-.4-3.5z"/>
+            </svg>
+            Continue with Google
+          </Button>
+
+          <div className="my-4 flex items-center gap-3 text-xs font-semibold uppercase tracking-wide text-slate-400">
+            <div className="h-px flex-1 bg-slate-200" />
+            or use email
+            <div className="h-px flex-1 bg-slate-200" />
+          </div>
+
           <input
             type="email"
             className="mb-3 w-full rounded-2xl border border-slate-200 px-4 py-3 text-sm outline-none focus:border-blue-400"
@@ -190,7 +228,7 @@ export function SignInPanel() {
           <input
             type="password"
             className="mb-3 w-full rounded-2xl border border-slate-200 px-4 py-3 text-sm outline-none focus:border-blue-400"
-            placeholder="Password (only if you've set one)"
+            placeholder="Password (leave blank if you don't have one)"
             value={password}
             onChange={(event) => setPassword(event.target.value)}
             onKeyDown={(event) => { if (event.key === "Enter" && password) signInWithPwd(); }}
@@ -202,20 +240,29 @@ export function SignInPanel() {
               disabled={sending || !email.trim() || !password}
               className="w-full rounded-2xl py-5"
             >
-              Sign In with Password
+              Sign In
             </Button>
             <Button
-              onClick={sendMagicLink}
+              onClick={emailMeLink}
               disabled={sending || !email.trim()}
               variant="secondary"
               className="w-full rounded-2xl py-5"
             >
-              <Mail size={16} className="mr-2" /> Send Magic Link
+              <Mail size={16} className="mr-2" /> Email me a sign-in link
             </Button>
           </div>
-          <p className="mt-3 text-xs leading-5 text-slate-500">
-            First time here? Click <strong>Send Magic Link</strong> — you'll get a one-time sign-in email. Once you're in, set a password under Settings so you don't need email next time.
+
+          <p className="mt-4 text-xs leading-5 text-slate-500">
+            <strong>First time?</strong> Use <strong>Continue with Google</strong> (fastest) or
+            type your email and tap <strong>Email me a sign-in link</strong> — both create your
+            account on the spot. No separate sign-up step.
           </p>
+
+          {message && (
+            <div className="mt-4 rounded-2xl border border-slate-200 bg-slate-50 p-3 text-xs font-semibold text-slate-700">
+              {message}
+            </div>
+          )}
         </CardContent>
       </Card>
     </div>
@@ -223,22 +270,25 @@ export function SignInPanel() {
 }
 
 export function CompanySetupPanel({ session, onReady }) {
-  const [memberships, setMemberships] = useState([]);
+  const inviteFromUrl = getInviteTokenFromUrl();
   const [companyName, setCompanyName] = useState("");
-  const [fullName, setFullName] = useState(session?.user?.user_metadata?.full_name || "");
-  const [inviteToken, setInviteToken] = useState(getInviteTokenFromUrl());
-  const [message, setMessage] = useState(
-    inviteToken
-      ? "QR invite detected. Confirm the token below to join the company."
-      : "Create a company workspace, or accept an invite from another survey company."
+  const [fullName, setFullName] = useState(
+    session?.user?.user_metadata?.full_name
+      || session?.user?.user_metadata?.name
+      || "",
   );
+  const [inviteToken, setInviteToken] = useState(inviteFromUrl);
+  // When an invite is in the URL we lead with Join. Otherwise lead with Create
+  // and let the user expand the "have an invite?" path if they need it.
+  const [mode, setMode] = useState(inviteFromUrl ? "join" : "create");
+  const [message, setMessage] = useState("");
   const [loading, setLoading] = useState(true);
+  const [working, setWorking] = useState(false);
 
   const load = async () => {
     setLoading(true);
     try {
       const rows = await fetchCompanyMemberships();
-      setMemberships(rows);
       if (rows[0]?.company) onReady(rows[0].company, rows[0]);
     } catch (error) {
       setMessage(error.message || "Could not load company memberships.");
@@ -251,17 +301,30 @@ export function CompanySetupPanel({ session, onReady }) {
 
   const create = async () => {
     if (!companyName.trim()) return;
+    setWorking(true);
+    setMessage("");
     try {
-      const company = await createCompany({ name: companyName.trim(), slug: slugify(companyName), fullName });
+      // Fall back to the email's local part if the user didn't fill in a name
+      // (e.g. came in via the magic-link path and never set user_metadata).
+      const nameForCreate = fullName.trim() || (session?.user?.email || "").split("@")[0] || "Owner";
+      const company = await createCompany({
+        name: companyName.trim(),
+        slug: slugify(companyName),
+        fullName: nameForCreate,
+      });
       setMessage(`Created ${company.name}.`);
       await load();
     } catch (error) {
       setMessage(error.message || "Could not create company.");
+    } finally {
+      setWorking(false);
     }
   };
 
   const accept = async () => {
     if (!inviteToken.trim()) return;
+    setWorking(true);
+    setMessage("");
     try {
       const acceptedCompanyId = await acceptInvite(inviteToken.trim());
       const cleanUrl = new URL(window.location.href);
@@ -276,39 +339,97 @@ export function CompanySetupPanel({ session, onReady }) {
       }
     } catch (error) {
       setMessage(error.message || "Could not accept invite.");
+    } finally {
+      setWorking(false);
     }
   };
 
   if (loading) {
-    return <div className="p-8 text-sm text-slate-600">Loading company account...</div>;
+    return <div className="p-8 text-sm text-slate-600">Loading...</div>;
   }
 
+  const isJoin = mode === "join";
+
   return (
-    <div className="mx-auto min-h-screen max-w-3xl px-4 py-10">
+    <div className="mx-auto min-h-screen max-w-xl px-4 py-10">
       <Card className="rounded-3xl border-0 shadow-xl">
         <CardContent className="p-6">
           <div className="mb-6 flex items-start justify-between gap-4">
             <div>
-              <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">Company Account</div>
-              <h1 className="mt-1 text-3xl font-black text-slate-950">Set up PointVault</h1>
-              <p className="mt-2 text-sm leading-6 text-slate-600">{message}</p>
+              <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                {isJoin ? "Join a company" : "Welcome"}
+              </div>
+              <h1 className="mt-1 text-3xl font-black text-slate-950">
+                {isJoin ? "Accept your invite" : "Name your company"}
+              </h1>
+              <p className="mt-2 text-sm leading-6 text-slate-600">
+                {isJoin
+                  ? "We detected an invite. Confirm to join the company that invited you."
+                  : "One line and you're in. Pick the name your crew uses for billing & invites — you can change it later."}
+              </p>
             </div>
             <Button onClick={signOut} variant="secondary" className="rounded-2xl px-4 py-3">Sign out</Button>
           </div>
 
-          <div className="grid gap-4 md:grid-cols-2">
-            <div className="rounded-3xl border border-slate-200 p-4">
-              <div className="mb-3 flex items-center gap-2 font-bold text-slate-950"><Plus size={18} /> Create company</div>
-              <input className="mb-3 w-full rounded-2xl border border-slate-200 px-4 py-3 text-sm outline-none focus:border-blue-400" placeholder="Company name" value={companyName} onChange={(e) => setCompanyName(e.target.value)} />
-              <input className="mb-3 w-full rounded-2xl border border-slate-200 px-4 py-3 text-sm outline-none focus:border-blue-400" placeholder="Your name" value={fullName} onChange={(e) => setFullName(e.target.value)} />
-              <Button onClick={create} className="w-full rounded-2xl py-5">Create Workspace</Button>
+          {isJoin ? (
+            <div className="space-y-3">
+              <input
+                className="w-full rounded-2xl border border-slate-200 px-4 py-3 text-sm outline-none focus:border-blue-400"
+                placeholder="Invite token"
+                value={inviteToken}
+                onChange={(e) => setInviteToken(e.target.value)}
+              />
+              <Button onClick={accept} disabled={working || !inviteToken.trim()} className="w-full rounded-2xl py-5">
+                <ShieldCheck size={16} className="mr-2" /> Join Company
+              </Button>
+              <button
+                type="button"
+                onClick={() => { setMode("create"); setMessage(""); }}
+                className="w-full text-center text-xs font-semibold text-slate-500 underline-offset-2 hover:underline"
+              >
+                Or create your own company instead
+              </button>
             </div>
-            <div className="rounded-3xl border border-slate-200 p-4">
-              <div className="mb-3 flex items-center gap-2 font-bold text-slate-950"><ShieldCheck size={18} /> Accept invite</div>
-              <input className="mb-3 w-full rounded-2xl border border-slate-200 px-4 py-3 text-sm outline-none focus:border-blue-400" placeholder="Invite token" value={inviteToken} onChange={(e) => setInviteToken(e.target.value)} />
-              <Button onClick={accept} variant="secondary" className="w-full rounded-2xl py-5">Accept Invite</Button>
+          ) : (
+            <div className="space-y-3">
+              <input
+                className="w-full rounded-2xl border border-slate-200 px-4 py-3 text-base outline-none focus:border-blue-400"
+                placeholder="Company name (e.g. Acme Surveyors)"
+                value={companyName}
+                onChange={(e) => setCompanyName(e.target.value)}
+                onKeyDown={(e) => { if (e.key === "Enter" && companyName.trim()) create(); }}
+                autoFocus
+              />
+              <details className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-xs">
+                <summary className="cursor-pointer font-semibold text-slate-600">Your name (optional)</summary>
+                <input
+                  className="mt-2 w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm outline-none focus:border-blue-400"
+                  placeholder="Your full name"
+                  value={fullName}
+                  onChange={(e) => setFullName(e.target.value)}
+                />
+                <p className="mt-2 text-[11px] leading-4 text-slate-500">
+                  Shown to teammates on your profile. We'll use your email if you skip this.
+                </p>
+              </details>
+              <Button onClick={create} disabled={working || !companyName.trim()} className="w-full rounded-2xl py-5">
+                <Plus size={16} className="mr-2" /> Create Company
+              </Button>
+              <button
+                type="button"
+                onClick={() => { setMode("join"); setMessage(""); }}
+                className="w-full text-center text-xs font-semibold text-slate-500 underline-offset-2 hover:underline"
+              >
+                Have an invite code from another company? Join instead
+              </button>
             </div>
-          </div>
+          )}
+
+          {message && (
+            <div className="mt-4 rounded-2xl border border-slate-200 bg-slate-50 p-3 text-xs font-semibold text-slate-700">
+              {message}
+            </div>
+          )}
         </CardContent>
       </Card>
     </div>

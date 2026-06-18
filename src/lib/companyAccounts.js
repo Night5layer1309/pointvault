@@ -40,6 +40,24 @@ export async function signInWithPassword(email, password) {
   return data;
 }
 
+// One-click Google sign-in / sign-up. Requires Google to be enabled as a
+// provider in the Supabase Auth → Providers settings (and the project's site
+// URL added to Google's authorized redirect URIs). If a returning invite token
+// is in the URL, carry it across the OAuth round-trip so the invite is still
+// applied after Google sends the user back.
+export async function signInWithGoogle() {
+  const inviteToken = getInviteTokenFromUrl();
+  const redirect = new URL(window.location.origin);
+  if (inviteToken) redirect.searchParams.set("invite", inviteToken);
+
+  const { data, error } = await supabase.auth.signInWithOAuth({
+    provider: "google",
+    options: { redirectTo: redirect.toString() },
+  });
+  if (error) throw error;
+  return data;
+}
+
 export async function setUserPassword(password) {
   const { data, error } = await supabase.auth.updateUser({ password });
   if (error) throw error;
