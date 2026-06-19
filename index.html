@@ -17,7 +17,7 @@
     />
     <meta name="robots" content="index, follow, max-image-preview:large" />
     <meta name="googlebot" content="index, follow" />
-    <link rel="canonical" href="https://pointvault.vercel.app/" />
+    <link rel="canonical" href="https://pointvault.app/" />
     <meta name="author" content="PointVault" />
 
     <!-- Favicons + Apple -->
@@ -31,13 +31,13 @@
     <!-- Open Graph (Facebook / LinkedIn / iMessage / Slack previews) -->
     <meta property="og:site_name" content="PointVault" />
     <meta property="og:type" content="website" />
-    <meta property="og:url" content="https://pointvault.vercel.app/" />
+    <meta property="og:url" content="https://pointvault.app/" />
     <meta property="og:title" content="PointVault — Find Survey Monuments Fast" />
     <meta
       property="og:description"
       content="Field-ready app for land surveyors. Import job points, find existing monuments by GPS, and share monument data with other survey companies."
     />
-    <meta property="og:image" content="https://pointvault.vercel.app/icon-512.png" />
+    <meta property="og:image" content="https://pointvault.app/icon-512.png" />
     <meta property="og:image:width" content="512" />
     <meta property="og:image:height" content="512" />
     <meta property="og:locale" content="en_US" />
@@ -49,7 +49,7 @@
       name="twitter:description"
       content="Field-ready app for land surveyors. Import job points, find existing monuments by GPS, and share monument data with other companies."
     />
-    <meta name="twitter:image" content="https://pointvault.vercel.app/icon-512.png" />
+    <meta name="twitter:image" content="https://pointvault.app/icon-512.png" />
 
     <!-- Structured data: SoftwareApplication. Helps Google show rich result cards. -->
     <script type="application/ld+json">
@@ -58,8 +58,8 @@
         "@type": "SoftwareApplication",
         "name": "PointVault",
         "description": "Field-ready PWA for land surveyors. Import job points, find existing survey monuments by GPS, and share monument data with other survey companies.",
-        "url": "https://pointvault.vercel.app/",
-        "image": "https://pointvault.vercel.app/icon-512.png",
+        "url": "https://pointvault.app/",
+        "image": "https://pointvault.app/icon-512.png",
         "applicationCategory": "BusinessApplication",
         "applicationSubCategory": "Land Surveying",
         "operatingSystem": "Web, iOS, Android",
@@ -85,8 +85,8 @@
         "@context": "https://schema.org",
         "@type": "Organization",
         "name": "PointVault",
-        "url": "https://pointvault.vercel.app/",
-        "logo": "https://pointvault.vercel.app/icon-512.png",
+        "url": "https://pointvault.app/",
+        "logo": "https://pointvault.app/icon-512.png",
         "contactPoint": {
           "@type": "ContactPoint",
           "email": "support@pointvault.app",
@@ -97,14 +97,49 @@
     </script>
   </head>
   <body>
-    <div id="root"></div>
-    <noscript>
-      <div style="max-width:640px;margin:48px auto;padding:24px;font-family:system-ui,sans-serif;color:#0f172a;line-height:1.6">
-        <h1 style="margin:0 0 12px">PointVault</h1>
-        <p>PointVault is a field-ready app for land surveyors — import your job points, find existing survey monuments by GPS, and share monument data with other survey companies.</p>
-        <p>This app needs JavaScript to run. Please enable JavaScript and reload, or visit <a href="/privacy.html">our privacy policy</a> for more information.</p>
-      </div>
-    </noscript>
+    <!--
+      Crawler-readable summary. The React SPA mounts into #root and replaces
+      everything below, but this content is what Googlebot, social previews,
+      and any JS-disabled visitor see. Without it the homepage looks empty to
+      search engines, which is why an SPA with no SSR doesn't rank for its own
+      brand name.
+    -->
+    <div id="root">
+      <main style="max-width:780px;margin:48px auto;padding:24px;font-family:system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;color:#0f172a;line-height:1.65">
+        <header style="display:flex;align-items:center;gap:14px;margin-bottom:24px">
+          <img src="/icon-192.png" alt="PointVault logo" width="56" height="56" style="border-radius:14px" />
+          <div>
+            <h1 style="margin:0;font-size:28px;font-weight:800">PointVault</h1>
+            <p style="margin:2px 0 0;color:#475569;font-size:14px">Find Survey Monuments Fast — Land Survey Point Database for Crews</p>
+          </div>
+        </header>
+
+        <p><strong>PointVault</strong> (also written <strong>Point Vault</strong>) is a field-ready app for land surveyors. Import the job points from your survey files, pull up existing survey monuments by GPS, and optionally share monument data with other survey companies in your area so the next crew on the same property can find what's already been set.</p>
+
+        <h2 style="font-size:18px;margin:28px 0 8px;color:#1e2952">What PointVault does</h2>
+        <ul>
+          <li><strong>Import survey points</strong> from CSV / TXT job files, with a column-mapping step so the importer never guesses wrong (Point ID, Northing, Easting, Elevation, Description).</li>
+          <li><strong>Find existing monuments</strong> on the map — IRs, CIRs, NIDs, PKs, axles, concrete monuments, benchmarks, control points — with GPS-aware proximity search and address-search backed by both OpenStreetMap and the US Census Geocoder.</li>
+          <li><strong>Share data across companies.</strong> Opt in to a community pool: contribute points and get access to monuments other firms have already recovered in the same area. Tiered access keeps full data behind contribution.</li>
+          <li><strong>Field notes &amp; observations</strong> on every point. Mark a monument found, suspect, record-only, or destroyed. Add a note that other crews can see.</li>
+          <li><strong>Works offline as a PWA.</strong> Install to your phone home screen; no app store required. Continues to work in the woods with no signal.</li>
+        </ul>
+
+        <h2 style="font-size:18px;margin:28px 0 8px;color:#1e2952">Who PointVault is for</h2>
+        <p>Land surveyors, civil engineers, and survey crews working on property corner recovery, boundary work, ALTA surveys, construction layout, control networks, and any project where finding existing monuments before setting new ones saves field time.</p>
+
+        <h2 style="font-size:18px;margin:28px 0 8px;color:#1e2952">Pricing</h2>
+        <p>$10/month per seat. A 1-seat free tier lets you try the whole app before adding crew members.</p>
+
+        <h2 style="font-size:18px;margin:28px 0 8px;color:#1e2952">Get started</h2>
+        <p>Open <a href="https://pointvault.app/">pointvault.app</a> on your phone or computer, sign in with Google or your email, and create your company workspace in one step. No separate sign-up flow.</p>
+
+        <p style="margin-top:32px;font-size:13px;color:#64748b">
+          PointVault is built for survey professionals. Loading the interactive app... if nothing happens, enable JavaScript in your browser and refresh.
+          See also our <a href="/privacy.html">Privacy Policy</a> and <a href="/delete-account.html">Account Deletion</a> page.
+        </p>
+      </main>
+    </div>
     <script type="module" src="/src/main.jsx"></script>
   </body>
 </html>

@@ -1,4 +1,4 @@
-# PointVault — https://pointvault.vercel.app/
+# PointVault — https://pointvault.app/
 # All content beyond / and the marketing/legal pages is auth-gated, so
 # crawlers can index the public pages but won't see anything private.
 
@@ -10,4 +10,4 @@ Disallow: /sw.js
 Disallow: /workbox-*.js
 Disallow: /assets/
 
-Sitemap: https://pointvault.vercel.app/sitemap.xml
+Sitemap: https://pointvault.app/sitemap.xml
