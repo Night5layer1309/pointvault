@@ -806,9 +806,19 @@ export function CommunityStandingPanel({ company }) {
     setRepairBusy(true);
     setError("");
     setRepairResult(null);
+    let totalRepaired = 0;
+    let lastResult = null;
+    const maxIterations = 200; // belt-and-suspenders cap (200 * 200 = 40k)
     try {
-      const result = await repairCompanyCommunityStats(company.id);
-      setRepairResult(result);
+      for (let i = 0; i < maxIterations; i += 1) {
+        const result = await repairCompanyCommunityStats(company.id, 200);
+        lastResult = result;
+        totalRepaired += Number(result.observations_repaired || 0);
+        setRepairResult({ ...result, observations_repaired: totalRepaired });
+        if (result.done || Number(result.observations_repaired || 0) === 0) break;
+      }
+      // Final snapshot
+      if (lastResult) setRepairResult({ ...lastResult, observations_repaired: totalRepaired });
       await load();
     } catch (err) {
       setError(err?.message || "Repair failed.");
