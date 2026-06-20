@@ -1605,21 +1605,43 @@ export function DataImportPanel({ company, membership, defaultEpsg, defaultCoord
                   <>
                     <div className="grid gap-2">
                       {rowsToShow.map((row) => {
-                        const bad = !!row.is_suspicious;
+                        const severity = row.severity || (row.is_suspicious ? "suspicious" : "normal");
+                        const isVeryWrong = severity === "very_wrong";
+                        const isSuspicious = severity === "suspicious" || isVeryWrong;
+                        const isWide = severity === "wide";
                         const span = Number(row.span_miles || 0);
                         const maxDist = Number(row.max_distance_from_centroid_miles || 0);
+                        const tierClass = isVeryWrong
+                          ? "border-red-300 bg-red-100"
+                          : isSuspicious
+                            ? "border-red-200 bg-red-50"
+                            : isWide
+                              ? "border-amber-200 bg-amber-50"
+                              : "border-slate-200 bg-white";
+                        const tierBadge = isVeryWrong
+                          ? { text: "VERY WRONG", cls: "bg-red-700 text-white" }
+                          : isSuspicious
+                            ? { text: "SUSPICIOUS", cls: "bg-red-100 text-red-800 ring-1 ring-red-300" }
+                            : isWide
+                              ? { text: "WIDE", cls: "bg-amber-100 text-amber-900 ring-1 ring-amber-300" }
+                              : null;
                         return (
                           <div
                             key={row.import_job_id}
-                            className={`rounded-2xl border p-4 ${bad ? "border-red-200 bg-red-50" : "border-slate-200 bg-white"}`}
+                            className={`rounded-2xl border p-4 ${tierClass}`}
                           >
                             <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
                               <div className="min-w-0 flex-1">
                                 <div className="flex items-center gap-2">
-                                  {bad && <XCircle size={16} className="text-red-700" />}
+                                  {isSuspicious && <XCircle size={16} className="text-red-700" />}
                                   <div className="truncate font-black text-slate-950">
                                     {row.source_file_name || "(unnamed import)"}
                                   </div>
+                                  {tierBadge && (
+                                    <span className={`shrink-0 rounded-full px-2 py-0.5 text-[10px] font-black uppercase tracking-wide ${tierBadge.cls}`}>
+                                      {tierBadge.text}
+                                    </span>
+                                  )}
                                 </div>
                                 <div className="mt-1 grid gap-1 text-xs font-semibold text-slate-600 md:grid-cols-2">
                                   <div>{Number(row.point_count || 0).toLocaleString()} points · span {span.toFixed(1)} mi · farthest {maxDist.toFixed(1)} mi from center</div>
@@ -1633,9 +1655,19 @@ export function DataImportPanel({ company, membership, defaultEpsg, defaultCoord
                                     </div>
                                   )}
                                 </div>
-                                {bad && (
+                                {isVeryWrong && (
+                                  <div className="mt-2 text-xs font-bold text-red-900">
+                                    🚨 Points span {span.toFixed(0)} miles — way beyond any single survey job. Almost certainly corrupt data or a badly wrong EPSG.
+                                  </div>
+                                )}
+                                {isSuspicious && !isVeryWrong && (
                                   <div className="mt-2 text-xs font-bold text-red-800">
-                                    ⚠️ Points are spread over {span.toFixed(0)} miles. Almost always means the wrong EPSG was declared.
+                                    ⚠️ Points are spread over {span.toFixed(0)} miles. Usually means the wrong coordinate system / EPSG was declared.
+                                  </div>
+                                )}
+                                {isWide && (
+                                  <div className="mt-2 text-xs font-semibold text-amber-900">
+                                    ℹ️ This file covers a wide area ({span.toFixed(0)} mi). Fine for corridor / regional / master files; double-check if it should be a single small job.
                                   </div>
                                 )}
                               </div>
@@ -1643,7 +1675,7 @@ export function DataImportPanel({ company, membership, defaultEpsg, defaultCoord
                                 onClick={() => deleteImportJobPoints(row)}
                                 disabled={deletingJobId === row.import_job_id || Number(row.point_count || 0) === 0}
                                 variant="secondary"
-                                className={`shrink-0 rounded-2xl px-4 py-3 ${bad ? "border border-red-300 bg-white text-red-800 hover:bg-red-100" : "border border-slate-200 text-slate-800"}`}
+                                className={`shrink-0 rounded-2xl px-4 py-3 ${isSuspicious ? "border border-red-300 bg-white text-red-800 hover:bg-red-100" : "border border-slate-200 text-slate-800"}`}
                               >
                                 {deletingJobId === row.import_job_id
                                   ? <Loader2 size={14} className="mr-2 animate-spin" />
