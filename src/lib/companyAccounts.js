@@ -269,18 +269,41 @@ export async function fetchCompanyMembers(companyId) {
   if (error) throw error;
   if (!memberships || memberships.length === 0) return [];
 
-  const userIds = Array.from(new Set(memberships.map((row) => row.user_id).filter(Boolean)));
-  if (userIds.length === 0) {
-    return memberships.map((row) => ({ ...row, profile: null }));
+  // Resolve member names/emails/last-sign-in via the SECURITY DEFINER RPC
+  // (auth.users isn't reachable from the client directly). Falls back to
+  // public.profiles if the RPC fails for any reason, so the panel never
+  // shows the bare UUIDs.
+  let profileMap = new Map();
+  try {
+    const { data: profileRows, error: profileError } = await supabase.rpc(
+      "get_company_member_profiles",
+      { target_company_id: companyId },
+    );
+    if (profileError) throw profileError;
+    profileMap = new Map(
+      (profileRows || []).map((profile) => [
+        profile.user_id,
+        {
+          id: profile.user_id,
+          email: profile.email,
+          full_name: profile.full_name,
+          created_at: profile.created_at,
+          last_sign_in_at: profile.last_sign_in_at,
+        },
+      ]),
+    );
+  } catch (rpcErr) {
+    console.warn("get_company_member_profiles failed, falling back to public.profiles:", rpcErr);
+    const userIds = Array.from(new Set(memberships.map((row) => row.user_id).filter(Boolean)));
+    if (userIds.length > 0) {
+      const { data: profiles } = await supabase
+        .from("profiles")
+        .select("id, email, full_name")
+        .in("id", userIds);
+      profileMap = new Map((profiles || []).map((profile) => [profile.id, profile]));
+    }
   }
 
-  const { data: profiles, error: profileError } = await supabase
-    .from("profiles")
-    .select("id, email, full_name")
-    .in("id", userIds);
-  if (profileError) throw profileError;
-
-  const profileMap = new Map((profiles || []).map((profile) => [profile.id, profile]));
   return memberships.map((row) => ({
     ...row,
     profile: profileMap.get(row.user_id) || null,

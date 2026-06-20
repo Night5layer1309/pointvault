@@ -8,6 +8,7 @@ import {
   CreditCard,
   ExternalLink,
   Link as LinkIcon,
+  Loader2,
   Lock,
   Mail,
   Plus,
@@ -1010,25 +1011,56 @@ export function TeamPanel({ company, membership }) {
             </div>
           )}
           {members.map((row) => {
-            const name = row.profile?.full_name || row.profile?.email || row.user_id;
+            const profile = row.profile || {};
+            const name = profile.full_name || profile.email?.split("@")[0] || "Unknown user";
+            const email = profile.email || "";
+            const initials = (profile.full_name || profile.email || "?")
+              .split(/[\s@]+/).filter(Boolean).slice(0, 2)
+              .map((part) => part.charAt(0).toUpperCase()).join("");
+            const lastSignIn = profile.last_sign_in_at
+              ? new Date(profile.last_sign_in_at).toLocaleString()
+              : null;
+            const joinedDate = row.created_at
+              ? new Date(row.created_at).toLocaleDateString()
+              : null;
+            const isOwnerRow = row.role === "owner";
             const removable = canRemove(row);
             const removing = removingUserId === row.user_id;
+            const roleChipClass = isOwnerRow
+              ? "bg-indigo-100 text-indigo-800"
+              : row.role === "admin"
+                ? "bg-blue-100 text-blue-800"
+                : "bg-slate-200 text-slate-700";
             return (
-              <div key={row.id} className="flex items-center justify-between gap-2 rounded-2xl bg-slate-50 px-3 py-2 text-sm">
-                <span className="min-w-0 truncate">{name}</span>
-                <div className="flex items-center gap-2">
-                  <span className="rounded-full bg-white px-2 py-1 text-xs font-bold text-slate-700">{row.role}</span>
-                  {removable && (
-                    <button
-                      onClick={() => removeMember(row)}
-                      disabled={removing}
-                      className="rounded-full border border-red-200 bg-white p-2 text-red-700 hover:bg-red-50 disabled:opacity-50"
-                      title={`Remove ${name}`}
-                      aria-label={`Remove ${name}`}
-                    >
-                      <Trash2 size={14} />
-                    </button>
-                  )}
+              <div key={row.id} className="rounded-2xl border border-slate-200 bg-white p-3">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="flex min-w-0 items-start gap-3">
+                    <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-slate-900 text-sm font-black uppercase text-white">
+                      {initials || "?"}
+                    </div>
+                    <div className="min-w-0">
+                      <div className="truncate text-sm font-bold text-slate-950">{name}</div>
+                      {email && <div className="mt-0.5 truncate text-xs text-slate-600">{email}</div>}
+                      <div className="mt-1 flex flex-wrap gap-x-3 gap-y-1 text-[11px] font-semibold text-slate-500">
+                        {joinedDate && <span>Joined {joinedDate}</span>}
+                        {lastSignIn ? <span>Last signed in {lastSignIn}</span> : <span>Never signed in</span>}
+                      </div>
+                    </div>
+                  </div>
+                  <div className="flex shrink-0 items-center gap-2">
+                    <span className={`rounded-full px-2 py-1 text-xs font-black uppercase ${roleChipClass}`}>{row.role}</span>
+                    {removable && (
+                      <button
+                        onClick={() => removeMember(row)}
+                        disabled={removing}
+                        className="rounded-full border border-red-200 bg-white p-2 text-red-700 hover:bg-red-50 disabled:opacity-50"
+                        title={`Remove ${name}`}
+                        aria-label={`Remove ${name}`}
+                      >
+                        {removing ? <Loader2 size={14} className="animate-spin" /> : <Trash2 size={14} />}
+                      </button>
+                    )}
+                  </div>
                 </div>
               </div>
             );
