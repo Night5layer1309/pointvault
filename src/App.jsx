@@ -492,13 +492,20 @@ function MapCenterTracker({ onCenterChange }) {
   const map = useMap();
   useEffect(() => {
     if (!onCenterChange) return undefined;
+    // Report zoom too so when the map remounts (e.g. user tabs to Points to
+    // look at point detail, then comes back), we can restore the same view
+    // instead of snapping to GPS.
     const report = () => {
       const c = map.getCenter();
-      onCenterChange({ lat: c.lat, lng: c.lng });
+      onCenterChange({ lat: c.lat, lng: c.lng, zoom: map.getZoom() });
     };
     map.on("moveend", report);
+    map.on("zoomend", report);
     report();
-    return () => map.off("moveend", report);
+    return () => {
+      map.off("moveend", report);
+      map.off("zoomend", report);
+    };
   }, [map, onCenterChange]);
   return null;
 }
@@ -535,15 +542,27 @@ function MapFlyToTarget({ target }) {
   return null;
 }
 
-function GisMap({ points, selectedPoint, userLocation, followUser, onUserPan, onMapCenterChange, flyToTarget, onSelectPoint, basemap, showParcels }) {
+function GisMap({ points, selectedPoint, userLocation, followUser, onUserPan, onMapCenterChange, flyToTarget, onSelectPoint, basemap, showParcels, savedView }) {
   const fallbackCenter = [30.7, -86.1];
-  const center = userLocation ? [userLocation.lat, userLocation.lng] : fallbackCenter;
+  // Restore where the user last was on the map (preserved in parent state) so
+  // bouncing to Points / Settings / Team and back doesn't snap us to GPS. If
+  // followUser is still on, RecenterMap will override this snap on the next
+  // render to track GPS — same as before.
+  const hasSavedView = !!savedView && Number.isFinite(savedView.lat) && Number.isFinite(savedView.lng);
+  const initialCenter = hasSavedView
+    ? [savedView.lat, savedView.lng]
+    : userLocation
+      ? [userLocation.lat, userLocation.lng]
+      : fallbackCenter;
+  const initialZoom = hasSavedView && Number.isFinite(savedView.zoom)
+    ? savedView.zoom
+    : userLocation ? 15 : 8;
   const selectedBasemap = BASEMAPS[basemap] || BASEMAPS.aerial;
 
   return (
     <Card className="overflow-hidden rounded-3xl border-0 shadow-lg">
       <CardContent className="relative h-[420px] p-0">
-        <MapContainer center={center} zoom={userLocation ? 15 : 8} className="h-full w-full" scrollWheelZoom>
+        <MapContainer center={initialCenter} zoom={initialZoom} className="h-full w-full" scrollWheelZoom>
           {selectedBasemap.map((layer, index) => {
             const layerProps = { url: layer.url, attribution: layer.attribution };
             if (layer.subdomains) layerProps.subdomains = layer.subdomains;
@@ -2001,6 +2020,7 @@ export default function SurveyPointAppPrototype() {
                 followUser={followUser}
                 onUserPan={() => { if (followUser) setFollowUser(false); }}
                 onMapCenterChange={setMapCenter}
+                savedView={mapCenter}
                 flyToTarget={flyToTarget}
                 onSelectPoint={selectPoint}
                 basemap={basemap}
