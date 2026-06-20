@@ -59,6 +59,9 @@ import {
   onAuthChange,
   shareCompanyPointToCommunity,
   shareAllCompanyPoints,
+  shareCompanyPointsBulk,
+  unshareCompanyPointFromCommunity,
+  unshareCompanyPointsBulk,
 } from "@/lib/companyAccounts";
 import {
   cleanupCompanyDuplicatePoints,
@@ -598,21 +601,49 @@ function GisMap({ points, selectedPoint, userLocation, followUser, onUserPan, on
   );
 }
 
-function PointCard({ point, selected, onClick }) {
+function PointCard({ point, selected, onClick, selectionMode = false, selectionChecked = false, onToggleSelect }) {
+  const isOwn = point.access_level === "full" || !point.access_level;
+  const isShared = point.visibility === "community";
+  const handleClick = () => {
+    if (selectionMode) {
+      if (point.dbId) onToggleSelect?.(point.dbId);
+    } else {
+      onClick(point);
+    }
+  };
+  const cardOutline = selectionMode
+    ? (selectionChecked ? "border-blue-500 shadow-md ring-2 ring-blue-200" : "border-slate-200 shadow-sm hover:shadow-md")
+    : (selected ? "border-blue-400 shadow-lg" : "border-slate-200 shadow-sm hover:shadow-md");
   return (
-    <button onClick={() => onClick(point)} className="w-full text-left">
-      <Card className={`rounded-3xl border transition ${selected ? "border-blue-400 shadow-lg" : "border-slate-200 shadow-sm hover:shadow-md"}`}>
+    <button onClick={handleClick} className="w-full text-left">
+      <Card className={`rounded-3xl border transition ${cardOutline}`}>
         <CardContent className="p-4">
           <div className="flex items-start justify-between gap-3">
-            <div>
-              <div className="font-bold text-slate-950">{point.id}</div>
-              <div className="mt-1 text-sm text-slate-600">{point.description || point.name || "Unnamed point"}</div>
+            <div className="flex min-w-0 items-start gap-3">
+              {selectionMode && (
+                <input
+                  type="checkbox"
+                  checked={selectionChecked}
+                  readOnly
+                  className="mt-1 h-4 w-4 shrink-0 accent-blue-600"
+                />
+              )}
+              <div className="min-w-0">
+                <div className="font-bold text-slate-950">{point.id}</div>
+                <div className="mt-1 text-sm text-slate-600">{point.description || point.name || "Unnamed point"}</div>
+              </div>
             </div>
             <div className="text-right text-sm font-semibold text-slate-700">{formatDistance(point.distanceFeet)}</div>
           </div>
           <div className="mt-3 flex flex-wrap gap-2">
             <StatusBadge status={point.status} />
             <ReliabilityBadge rating={point.reliability} />
+            {isOwn && isShared && (
+              <span className="rounded-full border border-emerald-200 bg-emerald-50 px-2 py-1 text-xs font-semibold text-emerald-800">Shared</span>
+            )}
+            {isOwn && !isShared && (
+              <span className="rounded-full border border-slate-200 bg-slate-50 px-2 py-1 text-xs font-semibold text-slate-700">Private</span>
+            )}
           </div>
           <div className="mt-3 flex items-center gap-2 text-xs text-slate-500">
             <MapPin size={13} />
@@ -763,6 +794,26 @@ function PointDetail({ point, company, onUpdatePoint, onDeletePoint, canDeletePo
     }
   };
 
+  const unshareFromCommunity = async () => {
+    if (!point.dbId) return;
+    if (!window.confirm(
+      "Take this point back from the community pool? Other companies will no longer see it. " +
+      "If you were the only contributor, the community marker disappears entirely. This is reversible — " +
+      "you can share it again later.",
+    )) return;
+    setSharingToCommunity(true);
+    setShareMessage("");
+    try {
+      await unshareCompanyPointFromCommunity(point.dbId);
+      onUpdatePoint({ ...point, visibility: "company" });
+      setShareMessage("Unshared. This point is private to your company again.");
+    } catch (error) {
+      setShareMessage(error?.message || "Could not unshare.");
+    } finally {
+      setSharingToCommunity(false);
+    }
+  };
+
   const canPersistObservations = !!point.dbId;
 
   const loadObservations = async () => {
@@ -905,8 +956,19 @@ function PointDetail({ point, company, onUpdatePoint, onDeletePoint, canDeletePo
           {isOwnPoint && (
             <div className="mt-3">
               {alreadyShared ? (
-                <div className="rounded-2xl bg-emerald-50 px-3 py-2 text-xs font-semibold text-emerald-800">
-                  Shared to the community pool.
+                <div className="space-y-2">
+                  <div className="rounded-2xl bg-emerald-50 px-3 py-2 text-xs font-semibold text-emerald-800">
+                    Shared to the community pool. Other companies in your community tier can see this point.
+                  </div>
+                  <Button
+                    onClick={unshareFromCommunity}
+                    disabled={sharingToCommunity || !point.dbId}
+                    variant="secondary"
+                    className="w-full rounded-2xl border border-amber-200 bg-amber-50 py-3 text-amber-900 hover:bg-amber-100"
+                  >
+                    <XCircle size={16} className="mr-2" />
+                    {sharingToCommunity ? "Unsharing..." : "Take this point back from community"}
+                  </Button>
                 </div>
               ) : canShare ? (
                 <Button
@@ -1131,6 +1193,12 @@ export default function SurveyPointAppPrototype() {
   const [layersOpen, setLayersOpen] = useState(false);
   const [bulkSharing, setBulkSharing] = useState(false);
   const [bulkShareMessage, setBulkShareMessage] = useState("");
+
+  // Multi-select mode for share-selected / unshare-selected on the Points tab.
+  const [selectionMode, setSelectionMode] = useState(false);
+  const [selectedDbIds, setSelectedDbIds] = useState(() => new Set());
+  const [selectionBusy, setSelectionBusy] = useState(false);
+  const [selectionMessage, setSelectionMessage] = useState("");
 
   const [locationMessage, setLocationMessage] = useState("Tap You Are Here to use phone GPS.");
   const [gpsWatchId, setGpsWatchId] = useState(null);
@@ -2148,33 +2216,188 @@ export default function SurveyPointAppPrototype() {
                 );
               })()}
 
-              <div>
-                <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
-                  <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-                    {filteredPoints.length.toLocaleString()} of {points.length.toLocaleString()} loaded points
-                  </div>
-                  {selectedPointBase && (
-                    <div className="flex items-center gap-2">
-                      <span className="rounded-full bg-blue-100 px-2 py-1 text-xs font-bold text-blue-900">
-                        Sorted by distance from {selectedPointBase.id || "selected point"}
-                      </span>
-                      <button
-                        type="button"
-                        onClick={() => setSelectedPointId(null)}
-                        className="text-xs font-semibold text-slate-500 underline-offset-2 hover:underline"
-                      >
-                        Clear selection
-                      </button>
+              {(() => {
+                // Selection-mode helpers / actions for share-selected and
+                // unshare-selected. Visible only on the Points tab.
+                const ownEligiblePoints = filteredPoints.filter(
+                  (p) => (p.access_level === "full" || !p.access_level) && p.dbId,
+                );
+                const ownEligibleIds = ownEligiblePoints.map((p) => p.dbId);
+                const toggleId = (dbId) => {
+                  setSelectedDbIds((prev) => {
+                    const next = new Set(prev);
+                    if (next.has(dbId)) next.delete(dbId); else next.add(dbId);
+                    return next;
+                  });
+                };
+                const enterSelectionMode = () => {
+                  setSelectionMode(true);
+                  setSelectedDbIds(new Set());
+                  setSelectionMessage("");
+                };
+                const exitSelectionMode = () => {
+                  setSelectionMode(false);
+                  setSelectedDbIds(new Set());
+                  setSelectionMessage("");
+                };
+                const selectAllVisible = () => setSelectedDbIds(new Set(ownEligibleIds));
+                const clearSelection = () => setSelectedDbIds(new Set());
+
+                const selectedPoints = ownEligiblePoints.filter((p) => selectedDbIds.has(p.dbId));
+                const selectedShared = selectedPoints.filter((p) => p.visibility === "community");
+                const selectedPrivate = selectedPoints.filter((p) => p.visibility !== "community");
+
+                const runShareSelected = async () => {
+                  if (selectedPrivate.length === 0) return;
+                  if (!window.confirm(
+                    `Share ${selectedPrivate.length} selected point${selectedPrivate.length === 1 ? "" : "s"} to the community pool?`,
+                  )) return;
+                  setSelectionBusy(true);
+                  setSelectionMessage("");
+                  try {
+                    const result = await shareCompanyPointsBulk(selectedPrivate.map((p) => p.dbId));
+                    setSelectionMessage(`Shared ${result.shared}${result.failed ? `, failed ${result.failed}` : ""}.`);
+                    await loadNearbyPoints();
+                    setSelectedDbIds(new Set());
+                  } catch (err) {
+                    setSelectionMessage(err?.message || "Share failed.");
+                  } finally {
+                    setSelectionBusy(false);
+                  }
+                };
+
+                const runUnshareSelected = async () => {
+                  if (selectedShared.length === 0) return;
+                  if (!window.confirm(
+                    `Take back ${selectedShared.length} selected point${selectedShared.length === 1 ? "" : "s"} from the community pool? ` +
+                    `Other companies will no longer see these. Reversible — you can share them again later.`,
+                  )) return;
+                  setSelectionBusy(true);
+                  setSelectionMessage("");
+                  try {
+                    const result = await unshareCompanyPointsBulk(selectedShared.map((p) => p.dbId));
+                    setSelectionMessage(`Unshared ${result.unshared}${result.failed ? `, failed ${result.failed}` : ""}.`);
+                    await loadNearbyPoints();
+                    setSelectedDbIds(new Set());
+                  } catch (err) {
+                    setSelectionMessage(err?.message || "Unshare failed.");
+                  } finally {
+                    setSelectionBusy(false);
+                  }
+                };
+
+                return (
+                  <div>
+                    <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+                      <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                        {filteredPoints.length.toLocaleString()} of {points.length.toLocaleString()} loaded points
+                      </div>
+                      <div className="flex flex-wrap items-center gap-2">
+                        {selectedPointBase && !selectionMode && (
+                          <>
+                            <span className="rounded-full bg-blue-100 px-2 py-1 text-xs font-bold text-blue-900">
+                              Sorted by distance from {selectedPointBase.id || "selected point"}
+                            </span>
+                            <button
+                              type="button"
+                              onClick={() => setSelectedPointId(null)}
+                              className="text-xs font-semibold text-slate-500 underline-offset-2 hover:underline"
+                            >
+                              Clear selection
+                            </button>
+                          </>
+                        )}
+                        {!selectionMode && ownEligiblePoints.length > 0 && (
+                          <Button
+                            onClick={enterSelectionMode}
+                            variant="secondary"
+                            className="rounded-2xl px-3 py-2 text-xs"
+                          >
+                            Select multiple
+                          </Button>
+                        )}
+                      </div>
                     </div>
-                  )}
-                </div>
-                <div className="grid gap-3 md:grid-cols-2">
-                  {filteredPoints.length === 0 && <EmptyPointState pointLoadMessage={pointLoadMessage} />}
-                  {filteredPoints.map((point) => (
-                    <PointCard key={`${pointKey(point)}-card`} point={point} selected={pointKey(selectedPoint) === pointKey(point)} onClick={selectPoint} />
-                  ))}
-                </div>
-              </div>
+
+                    {selectionMode && (
+                      <div className="mb-3 rounded-3xl border border-blue-200 bg-blue-50 p-3">
+                        <div className="flex flex-wrap items-center justify-between gap-2">
+                          <div className="text-sm font-bold text-blue-950">
+                            {selectedDbIds.size} selected
+                            {selectedDbIds.size > 0 && (
+                              <span className="ml-2 text-xs font-semibold text-blue-800">
+                                ({selectedPrivate.length} private · {selectedShared.length} shared)
+                              </span>
+                            )}
+                          </div>
+                          <div className="flex flex-wrap items-center gap-2">
+                            <button
+                              type="button"
+                              onClick={selectAllVisible}
+                              className="text-xs font-semibold text-blue-900 underline-offset-2 hover:underline"
+                            >
+                              Select all visible ({ownEligiblePoints.length})
+                            </button>
+                            <button
+                              type="button"
+                              onClick={clearSelection}
+                              className="text-xs font-semibold text-slate-600 underline-offset-2 hover:underline"
+                            >
+                              Clear
+                            </button>
+                          </div>
+                        </div>
+                        <div className="mt-3 grid gap-2 md:grid-cols-3">
+                          <Button
+                            onClick={runShareSelected}
+                            disabled={selectionBusy || selectedPrivate.length === 0}
+                            className="rounded-2xl px-3 py-2 text-xs"
+                          >
+                            <Upload size={14} className="mr-2" />
+                            {selectionBusy ? "Working..." : `Share Selected${selectedPrivate.length ? ` (${selectedPrivate.length})` : ""}`}
+                          </Button>
+                          <Button
+                            onClick={runUnshareSelected}
+                            disabled={selectionBusy || selectedShared.length === 0}
+                            variant="secondary"
+                            className="rounded-2xl border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-900 hover:bg-amber-100"
+                          >
+                            <XCircle size={14} className="mr-2" />
+                            {selectionBusy ? "Working..." : `Unshare Selected${selectedShared.length ? ` (${selectedShared.length})` : ""}`}
+                          </Button>
+                          <Button
+                            onClick={exitSelectionMode}
+                            variant="secondary"
+                            className="rounded-2xl px-3 py-2 text-xs"
+                          >
+                            Cancel
+                          </Button>
+                        </div>
+                        {selectionMessage && (
+                          <div className="mt-3 rounded-2xl bg-white p-2 text-xs font-semibold text-blue-900 ring-1 ring-blue-200">
+                            {selectionMessage}
+                          </div>
+                        )}
+                      </div>
+                    )}
+
+                    <div className="grid gap-3 md:grid-cols-2">
+                      {filteredPoints.length === 0 && <EmptyPointState pointLoadMessage={pointLoadMessage} />}
+                      {filteredPoints.map((point) => (
+                        <PointCard
+                          key={`${pointKey(point)}-card`}
+                          point={point}
+                          selected={pointKey(selectedPoint) === pointKey(point)}
+                          onClick={selectPoint}
+                          selectionMode={selectionMode}
+                          selectionChecked={point.dbId ? selectedDbIds.has(point.dbId) : false}
+                          onToggleSelect={toggleId}
+                        />
+                      ))}
+                    </div>
+                  </div>
+                );
+              })()}
             </div>
           )}
 

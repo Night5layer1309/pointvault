@@ -187,6 +187,28 @@ export async function shareAllCompanyPoints(companyId) {
   return data || { shared: 0, failed: 0 };
 }
 
+// Reverse a share: flip the point back to private and remove our row from
+// community_point_observations. If we were the only contributor, the
+// community_point itself is deleted so it vanishes from other companies' maps.
+export async function unshareCompanyPointFromCommunity(companyPointId) {
+  if (!companyPointId) throw new Error("Missing point ID.");
+  const { data, error } = await supabase.rpc("unshare_company_point_to_community", {
+    target_company_point_id: companyPointId,
+  });
+  if (error) throw error;
+  return data;
+}
+
+export async function unshareCompanyPointsBulk(companyPointIds) {
+  const ids = Array.isArray(companyPointIds) ? companyPointIds.filter(Boolean) : [];
+  if (ids.length === 0) return { unshared: 0, skipped: 0, failed: 0 };
+  const { data, error } = await supabase.rpc("unshare_company_points_bulk", {
+    target_point_ids: ids,
+  });
+  if (error) throw error;
+  return data || { unshared: 0, skipped: 0, failed: 0 };
+}
+
 export async function removeCompanyMember({ companyId, userId }) {
   const { data, error } = await supabase.rpc("remove_company_member", {
     target_company_id: companyId,
