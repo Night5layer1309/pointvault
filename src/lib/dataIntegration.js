@@ -811,6 +811,29 @@ export async function fetchNearbyVisiblePoints({ companyId, location, radiusFeet
   });
 }
 
+// Data Health: per-import-job audit. Returns one row per import job with
+// point count, centroid, span in miles, and an is_suspicious flag for jobs
+// whose points are spread > 50 miles apart (almost always an EPSG mistake).
+export async function auditCompanyImportJobs(companyId) {
+  if (!companyId) return { data: [], error: { message: "No company selected." } };
+  const { data, error } = await supabase.rpc("audit_company_import_jobs", {
+    target_company_id: companyId,
+  });
+  if (error) return { data: [], error };
+  return { data: data || [], error: null };
+}
+
+// Wipes every company_point belonging to an import job. Used to clean up the
+// fallout from a wrong-EPSG import without touching other imports.
+export async function deleteStorageImportJobPoints(importJobId) {
+  if (!importJobId) throw new Error("Missing import job ID.");
+  const { data, error } = await supabase.rpc("delete_storage_import_job_points", {
+    target_import_job_id: importJobId,
+  });
+  if (error) throw error;
+  return data || { deleted: 0 };
+}
+
 // Calls the geocode-address edge function, which tries Nominatim first and
 // falls back to the US Census Geocoder. The function runs server-side so the
 // Census API's missing CORS headers don't block the browser. Returns

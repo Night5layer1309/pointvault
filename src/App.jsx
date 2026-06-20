@@ -1253,13 +1253,28 @@ export default function SurveyPointAppPrototype() {
     };
   }, [gpsWatchId]);
 
+  // When a point is selected (by clicking on the map or in the list), the
+  // user wants the rest of the list ordered by distance to THAT point — not
+  // to their GPS. e.g. clicking a corner shows what other monuments sit
+  // closest to it. With no selection, fall back to distance from GPS.
+  const selectedPointBase = useMemo(() => {
+    if (!selectedPointId) return null;
+    return points.find((p) => pointKey(p) === selectedPointId) || null;
+  }, [points, selectedPointId]);
+
   const pointsWithDistance = useMemo(() => {
-    return points.map((point) => ({
-      ...point,
-      distanceFeet:
-        typeof point.distanceFeet === "number" ? point.distanceFeet : distanceFeet(userLocation, point),
-    }));
-  }, [points, userLocation]);
+    return points.map((point) => {
+      let dist = null;
+      if (selectedPointBase) {
+        dist = distanceFeet(selectedPointBase, point);
+      } else if (typeof point.distanceFeet === "number") {
+        dist = point.distanceFeet;
+      } else if (userLocation) {
+        dist = distanceFeet(userLocation, point);
+      }
+      return { ...point, distanceFeet: dist };
+    });
+  }, [points, userLocation, selectedPointBase]);
 
   const filteredPoints = useMemo(() => {
     return pointsWithDistance
@@ -1269,18 +1284,29 @@ export default function SurveyPointAppPrototype() {
         return haystack.includes(query.toLowerCase());
       })
       .filter((point) => {
+        // GPS-distance filter only applies when there's no selection — once a
+        // point is selected, the user is exploring near it, not near their
+        // phone, so a "within 1000ft of me" cap would hide everything.
+        if (selectedPointBase) return true;
         if (!userLocation) return true;
         if (maxDistanceFeet >= 999999999) return true;
         if (point.distanceFeet === null || point.distanceFeet === undefined) return false;
         return point.distanceFeet <= maxDistanceFeet;
       })
       .sort((a, b) => {
+        // Selected point itself always first; then nearest-to-selected.
+        if (selectedPointBase) {
+          const aIsSel = pointKey(a) === selectedPointId;
+          const bIsSel = pointKey(b) === selectedPointId;
+          if (aIsSel && !bIsSel) return -1;
+          if (bIsSel && !aIsSel) return 1;
+        }
         if (a.distanceFeet === null && b.distanceFeet === null) return 0;
         if (a.distanceFeet === null || a.distanceFeet === undefined) return 1;
         if (b.distanceFeet === null || b.distanceFeet === undefined) return -1;
         return a.distanceFeet - b.distanceFeet;
       });
-  }, [pointsWithDistance, query, status, maxDistanceFeet, userLocation]);
+  }, [pointsWithDistance, query, status, maxDistanceFeet, userLocation, selectedPointBase, selectedPointId]);
 
   const selectedPoint = pointsWithDistance.find((point) => pointKey(point) === selectedPointId) || filteredPoints[0] || null;
 
@@ -2123,8 +2149,24 @@ export default function SurveyPointAppPrototype() {
               })()}
 
               <div>
-                <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">
-                  {filteredPoints.length.toLocaleString()} of {points.length.toLocaleString()} loaded points
+                <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+                  <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                    {filteredPoints.length.toLocaleString()} of {points.length.toLocaleString()} loaded points
+                  </div>
+                  {selectedPointBase && (
+                    <div className="flex items-center gap-2">
+                      <span className="rounded-full bg-blue-100 px-2 py-1 text-xs font-bold text-blue-900">
+                        Sorted by distance from {selectedPointBase.id || "selected point"}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => setSelectedPointId(null)}
+                        className="text-xs font-semibold text-slate-500 underline-offset-2 hover:underline"
+                      >
+                        Clear selection
+                      </button>
+                    </div>
+                  )}
                 </div>
                 <div className="grid gap-3 md:grid-cols-2">
                   {filteredPoints.length === 0 && <EmptyPointState pointLoadMessage={pointLoadMessage} />}

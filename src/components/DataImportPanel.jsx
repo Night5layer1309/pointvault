@@ -26,7 +26,9 @@ import {
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import {
+  auditCompanyImportJobs,
   createAndUploadStorageImport,
+  deleteStorageImportJobPoints,
   fetchStorageCsvRows,
   getImportJob,
   getRecentImportJobs,
@@ -317,6 +319,13 @@ export function DataImportPanel({ company, membership, defaultEpsg, defaultCoord
   const [recentJobs, setRecentJobs] = useState([]);
   const [activeJob, setActiveJob] = useState(null);
 
+  // Data Health audit (per-import-job spread / suspicious-EPSG detection).
+  const [auditRows, setAuditRows] = useState(null); // null = not loaded yet
+  const [auditLoading, setAuditLoading] = useState(false);
+  const [auditMessage, setAuditMessage] = useState("");
+  const [deletingJobId, setDeletingJobId] = useState("");
+  const [showAllAudit, setShowAllAudit] = useState(false);
+
   // Approve-without-reupload state (Phase 1 re-run + Phase 2 review picker).
   const [rerunBusy, setRerunBusy] = useState(false);
   const [reviewRows, setReviewRows] = useState(null); // null = not loaded
@@ -431,6 +440,45 @@ export function DataImportPanel({ company, membership, defaultEpsg, defaultCoord
     loadRecentJobs();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [company?.id]);
+
+  const runDataHealthAudit = async () => {
+    if (!company?.id) return;
+    setAuditLoading(true);
+    setAuditMessage("");
+    const { data, error: auditError } = await auditCompanyImportJobs(company.id);
+    if (auditError) {
+      setAuditMessage(auditError.message || "Could not run Data Health audit.");
+      setAuditLoading(false);
+      return;
+    }
+    setAuditRows(data || []);
+    setAuditLoading(false);
+  };
+
+  const deleteImportJobPoints = async (auditRow) => {
+    if (!auditRow?.import_job_id) return;
+    const label = auditRow.source_file_name || auditRow.import_job_id.slice(0, 8);
+    const count = Number(auditRow.point_count || 0).toLocaleString();
+    const ok = window.confirm(
+      `Delete ALL ${count} points imported from "${label}" from PointVault?\n\n` +
+      `This wipes only the company_points belonging to this one import job. ` +
+      `The raw file in storage and the import job record stay. You can re-import ` +
+      `the file with the correct EPSG to bring the points back in the right place.\n\n` +
+      `This cannot be undone.`,
+    );
+    if (!ok) return;
+    setDeletingJobId(auditRow.import_job_id);
+    setAuditMessage("");
+    try {
+      const result = await deleteStorageImportJobPoints(auditRow.import_job_id);
+      setAuditMessage(`Deleted ${Number(result.deleted || 0).toLocaleString()} points from "${label}".`);
+      await runDataHealthAudit();
+    } catch (err) {
+      setAuditMessage(err?.message || "Delete failed.");
+    } finally {
+      setDeletingJobId("");
+    }
+  };
 
   const loadPreviewFromFile = async (file, { detect = false } = {}) => {
     if (!file) {
@@ -1506,6 +1554,124 @@ export function DataImportPanel({ company, membership, defaultEpsg, defaultCoord
           </CardContent>
         </Card>
       )}
+
+      <Card className="rounded-3xl border-0 shadow-xl">
+        <CardContent className="p-5">
+          <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+            <div>
+              <h3 className="text-xl font-black text-slate-950">Data Health</h3>
+              <p className="mt-1 text-sm text-slate-600">
+                Audit every import for suspicious geographic spread. Imports with a span over 50 miles
+                almost always mean the wrong coordinate system / EPSG was declared at upload — points
+                landed hundreds of miles off their real location. Delete the bad import's points, then
+                re-upload the file with the correct coordinate system.
+              </p>
+            </div>
+            <Button
+              onClick={runDataHealthAudit}
+              disabled={auditLoading || !company?.id}
+              variant="secondary"
+              className="rounded-2xl px-4 py-3"
+            >
+              {auditLoading ? <Loader2 size={16} className="mr-2 animate-spin" /> : <RefreshCw size={16} className="mr-2" />}
+              {auditRows === null ? "Run Audit" : "Re-run Audit"}
+            </Button>
+          </div>
+
+          {auditMessage && (
+            <Message kind={/(deleted|fail|could not)/i.test(auditMessage) && /deleted/i.test(auditMessage) ? "success" : /fail|could not/i.test(auditMessage) ? "error" : "info"}>
+              {auditMessage}
+            </Message>
+          )}
+
+          {auditRows !== null && (() => {
+            const total = auditRows.length;
+            const suspicious = auditRows.filter((r) => r.is_suspicious);
+            const totalPoints = auditRows.reduce((sum, r) => sum + Number(r.point_count || 0), 0);
+            const rowsToShow = showAllAudit ? auditRows : (suspicious.length > 0 ? suspicious : auditRows.slice(0, 5));
+            return (
+              <div className="mt-4">
+                <div className="mb-3 grid gap-3 md:grid-cols-3">
+                  <StatCard label="Imports audited" value={total} note="All jobs" />
+                  <StatCard label="Suspicious" value={suspicious.length} note=">50 mi span" />
+                  <StatCard label="Total points" value={totalPoints} note="In all imports" />
+                </div>
+
+                {total === 0 ? (
+                  <div className="rounded-2xl border border-dashed border-slate-300 bg-white p-4 text-sm text-slate-600">
+                    No imports yet — nothing to audit.
+                  </div>
+                ) : (
+                  <>
+                    <div className="grid gap-2">
+                      {rowsToShow.map((row) => {
+                        const bad = !!row.is_suspicious;
+                        const span = Number(row.span_miles || 0);
+                        const maxDist = Number(row.max_distance_from_centroid_miles || 0);
+                        return (
+                          <div
+                            key={row.import_job_id}
+                            className={`rounded-2xl border p-4 ${bad ? "border-red-200 bg-red-50" : "border-slate-200 bg-white"}`}
+                          >
+                            <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+                              <div className="min-w-0 flex-1">
+                                <div className="flex items-center gap-2">
+                                  {bad && <XCircle size={16} className="text-red-700" />}
+                                  <div className="truncate font-black text-slate-950">
+                                    {row.source_file_name || "(unnamed import)"}
+                                  </div>
+                                </div>
+                                <div className="mt-1 grid gap-1 text-xs font-semibold text-slate-600 md:grid-cols-2">
+                                  <div>{Number(row.point_count || 0).toLocaleString()} points · span {span.toFixed(1)} mi · farthest {maxDist.toFixed(1)} mi from center</div>
+                                  <div className="truncate">
+                                    {row.declared_coordinate_system || `EPSG ${row.declared_epsg || "?"}`} ·
+                                    {" "}{formatDate(row.created_at)}
+                                  </div>
+                                  {Number.isFinite(Number(row.centroid_lat)) && (
+                                    <div>
+                                      Centroid: {Number(row.centroid_lat).toFixed(4)}, {Number(row.centroid_lng).toFixed(4)}
+                                    </div>
+                                  )}
+                                </div>
+                                {bad && (
+                                  <div className="mt-2 text-xs font-bold text-red-800">
+                                    ⚠️ Points are spread over {span.toFixed(0)} miles. Almost always means the wrong EPSG was declared.
+                                  </div>
+                                )}
+                              </div>
+                              <Button
+                                onClick={() => deleteImportJobPoints(row)}
+                                disabled={deletingJobId === row.import_job_id || Number(row.point_count || 0) === 0}
+                                variant="secondary"
+                                className={`shrink-0 rounded-2xl px-4 py-3 ${bad ? "border border-red-300 bg-white text-red-800 hover:bg-red-100" : "border border-slate-200 text-slate-800"}`}
+                              >
+                                {deletingJobId === row.import_job_id
+                                  ? <Loader2 size={14} className="mr-2 animate-spin" />
+                                  : <XCircle size={14} className="mr-2" />}
+                                Delete this import's points
+                              </Button>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+
+                    {!showAllAudit && rowsToShow.length < total && (
+                      <button
+                        type="button"
+                        onClick={() => setShowAllAudit(true)}
+                        className="mt-3 w-full rounded-2xl border border-slate-200 bg-white py-2 text-xs font-bold text-slate-700 hover:bg-slate-50"
+                      >
+                        Show all {total} imports (currently showing {suspicious.length > 0 ? "only suspicious" : "first 5"})
+                      </button>
+                    )}
+                  </>
+                )}
+              </div>
+            );
+          })()}
+        </CardContent>
+      </Card>
 
       <Card className="rounded-3xl border-0 shadow-xl">
         <CardContent className="p-5">
