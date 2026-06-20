@@ -209,6 +209,17 @@ export async function unshareCompanyPointsBulk(companyPointIds) {
   return data || { unshared: 0, skipped: 0, failed: 0 };
 }
 
+// Community-standing snapshot: current tier + shared/viewed counts + a few
+// flags for the trust-signal card on Team & Billing.
+export async function getCompanyCommunityStatus(companyId) {
+  if (!companyId) return null;
+  const { data, error } = await supabase.rpc("get_company_community_status", {
+    target_company_id: companyId,
+  });
+  if (error) throw error;
+  return data || null;
+}
+
 export async function removeCompanyMember({ companyId, userId }) {
   const { data, error } = await supabase.rpc("remove_company_member", {
     target_company_id: companyId,

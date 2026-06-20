@@ -41,6 +41,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import {
   BillingPanel,
+  CommunityStandingPanel,
   CompanySetupPanel,
   InvitePanel,
   SignInPanel,
@@ -2417,6 +2418,7 @@ export default function SurveyPointAppPrototype() {
           {tab === "team" && (
             <div className="space-y-4">
               <BillingPanel company={activeCompany} canAdmin={canDeletePoints} />
+              <CommunityStandingPanel company={activeCompany} />
               <TeamPanel company={activeCompany} membership={activeMembership} />
               <InvitePanel company={activeCompany} membership={activeMembership} />
             </div>

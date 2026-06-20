@@ -41,6 +41,7 @@ import {
   signOut,
   startCheckoutForCompany,
   syncStripeQuantity,
+  getCompanyCommunityStatus,
 } from "@/lib/companyAccounts";
 
 function slugify(value) {
@@ -738,6 +739,134 @@ export function BillingPanel({ company, canAdmin }) {
         {error && (
           <div className="mt-3 rounded-2xl bg-red-50 px-3 py-2 text-xs font-semibold text-red-800">{error}</div>
         )}
+      </CardContent>
+    </Card>
+  );
+}
+
+const TIER_META = {
+  private: {
+    label: "Private",
+    color: "slate",
+    summary: "Community sharing isn't on yet. Your company points are visible only to you and your crew.",
+  },
+  viewing_only: {
+    label: "Viewing only",
+    color: "slate",
+    summary: "You can see community markers (location only) on the map. Share a point to unlock more.",
+  },
+  low_contribution: {
+    label: "Low contribution",
+    color: "amber",
+    summary: "You can see community markers with description and marker type. Share 100+ points to upgrade to Contributor.",
+  },
+  contributor: {
+    label: "Contributor",
+    color: "blue",
+    summary: "Full community access: exact coordinates, descriptions, status, reliability. Keep your share/view ratio above 1-in-4 to reach Balanced.",
+  },
+  balanced: {
+    label: "Balanced",
+    color: "emerald",
+    summary: "Top tier. You contribute as much as you take. Full access to every community marker.",
+  },
+};
+
+const TIER_COLOR_CLASSES = {
+  slate: "border-slate-200 bg-slate-50 text-slate-800",
+  amber: "border-amber-200 bg-amber-50 text-amber-900",
+  blue: "border-blue-200 bg-blue-50 text-blue-900",
+  emerald: "border-emerald-200 bg-emerald-50 text-emerald-900",
+};
+
+export function CommunityStandingPanel({ company }) {
+  const [status, setStatus] = useState(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
+
+  const load = async () => {
+    if (!company?.id) return;
+    setLoading(true);
+    setError("");
+    try {
+      const next = await getCompanyCommunityStatus(company.id);
+      setStatus(next);
+    } catch (err) {
+      setError(err?.message || "Could not load community standing.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => { load(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [company?.id]);
+
+  if (!company?.id) return null;
+
+  const tier = status?.tier || "private";
+  const meta = TIER_META[tier] || TIER_META.private;
+  const shared = Number(status?.shared_count || 0);
+  const viewed = Number(status?.viewed_count || 0);
+  const ratio = viewed > 0 ? (shared / viewed) : null;
+
+  let progressNote = null;
+  if (tier === "viewing_only") {
+    progressNote = "Share your first point to unlock Low Contribution tier.";
+  } else if (tier === "low_contribution") {
+    const need = Math.max(0, 100 - shared);
+    progressNote = `Share ${need.toLocaleString()} more point${need === 1 ? "" : "s"} to reach Contributor tier.`;
+  } else if (tier === "contributor") {
+    progressNote = "Keep your share/view ratio at 1:4 or better to reach Balanced tier.";
+  } else if (tier === "balanced") {
+    progressNote = "You're at the top tier. Thanks for contributing.";
+  }
+
+  return (
+    <Card className="rounded-3xl border-0 shadow-xl">
+      <CardContent className="p-5">
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">Community Standing</div>
+            <h3 className="mt-1 text-xl font-black text-slate-950">Your share of the pool</h3>
+          </div>
+          <span className={`rounded-full border px-3 py-1 text-xs font-black uppercase ${TIER_COLOR_CLASSES[meta.color]}`}>
+            {meta.label}
+          </span>
+        </div>
+
+        <p className="mt-3 text-sm leading-6 text-slate-700">{meta.summary}</p>
+
+        <div className="mt-4 grid gap-3 sm:grid-cols-3">
+          <div className="rounded-2xl bg-slate-50 p-4">
+            <div className="text-xs font-semibold uppercase text-slate-400">Contributed</div>
+            <div className="mt-1 text-2xl font-black text-slate-950">{shared.toLocaleString()}</div>
+            <div className="mt-1 text-xs font-semibold text-slate-500">Points shared</div>
+          </div>
+          <div className="rounded-2xl bg-slate-50 p-4">
+            <div className="text-xs font-semibold uppercase text-slate-400">Viewed</div>
+            <div className="mt-1 text-2xl font-black text-slate-950">{viewed.toLocaleString()}</div>
+            <div className="mt-1 text-xs font-semibold text-slate-500">Community lookups you've done</div>
+          </div>
+          <div className="rounded-2xl bg-slate-50 p-4">
+            <div className="text-xs font-semibold uppercase text-slate-400">Ratio</div>
+            <div className="mt-1 text-2xl font-black text-slate-950">{ratio === null ? "—" : `${ratio.toFixed(2)}x`}</div>
+            <div className="mt-1 text-xs font-semibold text-slate-500">Shared per viewed</div>
+          </div>
+        </div>
+
+        {progressNote && (
+          <div className="mt-4 rounded-2xl border border-slate-200 bg-white p-3 text-xs font-semibold text-slate-700">
+            {progressNote}
+          </div>
+        )}
+
+        {status?.access_override && (
+          <div className="mt-3 rounded-2xl border border-blue-200 bg-blue-50 p-3 text-xs font-semibold text-blue-900">
+            Tier manually set to <strong>{status.access_override}</strong> by admin override.
+          </div>
+        )}
+
+        {loading && <div className="mt-3 text-xs font-semibold text-slate-500">Loading...</div>}
+        {error && <div className="mt-3 rounded-2xl bg-red-50 px-3 py-2 text-xs font-semibold text-red-800">{error}</div>}
       </CardContent>
     </Card>
   );
