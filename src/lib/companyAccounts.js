@@ -220,6 +220,18 @@ export async function getCompanyCommunityStatus(companyId) {
   return data || null;
 }
 
+// Diagnose + fix the share counter when it drifts (e.g. company_points
+// flagged community don't have matching observations). Returns before/after
+// numbers so the UI can show what changed.
+export async function repairCompanyCommunityStats(companyId) {
+  if (!companyId) throw new Error("No company selected.");
+  const { data, error } = await supabase.rpc("repair_company_community_stats", {
+    target_company_id: companyId,
+  });
+  if (error) throw error;
+  return data || {};
+}
+
 export async function removeCompanyMember({ companyId, userId }) {
   const { data, error } = await supabase.rpc("remove_company_member", {
     target_company_id: companyId,

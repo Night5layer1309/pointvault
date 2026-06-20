@@ -42,6 +42,7 @@ import {
   startCheckoutForCompany,
   syncStripeQuantity,
   getCompanyCommunityStatus,
+  repairCompanyCommunityStats,
 } from "@/lib/companyAccounts";
 
 function slugify(value) {
@@ -783,6 +784,8 @@ export function CommunityStandingPanel({ company }) {
   const [status, setStatus] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const [repairBusy, setRepairBusy] = useState(false);
+  const [repairResult, setRepairResult] = useState(null);
 
   const load = async () => {
     if (!company?.id) return;
@@ -795,6 +798,22 @@ export function CommunityStandingPanel({ company }) {
       setError(err?.message || "Could not load community standing.");
     } finally {
       setLoading(false);
+    }
+  };
+
+  const runRepair = async () => {
+    if (!company?.id) return;
+    setRepairBusy(true);
+    setError("");
+    setRepairResult(null);
+    try {
+      const result = await repairCompanyCommunityStats(company.id);
+      setRepairResult(result);
+      await load();
+    } catch (err) {
+      setError(err?.message || "Repair failed.");
+    } finally {
+      setRepairBusy(false);
     }
   };
 
@@ -862,6 +881,40 @@ export function CommunityStandingPanel({ company }) {
         {status?.access_override && (
           <div className="mt-3 rounded-2xl border border-blue-200 bg-blue-50 p-3 text-xs font-semibold text-blue-900">
             Tier manually set to <strong>{status.access_override}</strong> by admin override.
+          </div>
+        )}
+
+        <div className="mt-4 flex items-center justify-between gap-3 border-t border-slate-100 pt-3">
+          <p className="text-xs text-slate-500">
+            Number looks wrong? Run repair — it walks every point flagged as community,
+            recreates any missing observation rows, and recomputes the counter.
+          </p>
+          <Button
+            onClick={runRepair}
+            disabled={repairBusy}
+            variant="secondary"
+            className="shrink-0 rounded-2xl px-3 py-2 text-xs"
+          >
+            {repairBusy ? "Repairing..." : "Refresh / Repair"}
+          </Button>
+        </div>
+
+        {repairResult && (
+          <div className="mt-3 rounded-2xl border border-emerald-200 bg-emerald-50 p-3 text-xs font-semibold text-emerald-900">
+            <div className="font-black">
+              Counter updated: {Number(repairResult.old_counter || 0).toLocaleString()} → {Number(repairResult.new_counter || 0).toLocaleString()}
+            </div>
+            <div className="mt-1 grid gap-1 opacity-90">
+              <div>Company points flagged as community: {Number(repairResult.flagged_company_points || 0).toLocaleString()}</div>
+              <div>Observation rows before repair: {Number(repairResult.observations_before || 0).toLocaleString()}</div>
+              <div>Missing observations created: {Number(repairResult.observations_repaired || 0).toLocaleString()}</div>
+              <div>Observation rows after repair: {Number(repairResult.observations_after || 0).toLocaleString()}</div>
+            </div>
+            {Number(repairResult.flagged_company_points || 0) !== Number(repairResult.observations_after || 0) && (
+              <div className="mt-2 text-amber-900">
+                ⚠️ Still a gap of {Math.abs(Number(repairResult.flagged_company_points || 0) - Number(repairResult.observations_after || 0)).toLocaleString()} between flagged points and observations — some points may have failed to share (e.g. missing geometry). Run audit on your imports if this persists.
+              </div>
+            )}
           </div>
         )}
 
