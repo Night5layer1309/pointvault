@@ -779,7 +779,7 @@ function AdminBody({ session }) {
               <li key={idx} className="rounded-xl bg-slate-50 px-3 py-2 text-xs dark:bg-slate-800">
                 <div className="font-semibold text-slate-900 dark:text-slate-100">
                   {row.company_name} <span className="font-normal text-slate-500 dark:text-slate-400">
-                    · {row.created_at ? new Date(row.created_at).toLocaleString() : "—"}
+                    · {row.shared_at ? new Date(row.shared_at).toLocaleString() : "—"}
                   </span>
                 </div>
                 <div className="mt-0.5 text-slate-600 dark:text-slate-300">
