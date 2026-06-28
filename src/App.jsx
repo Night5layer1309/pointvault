@@ -53,6 +53,7 @@ import {
   addCommunityPointNote,
   addPointObservation,
   fetchCompanyBilling,
+  fetchAllCompanyPoints,
   fetchNearbyCompanyPoints,
   getCurrentSession,
   listCommunityPointNotes,
@@ -282,22 +283,49 @@ function RecenterMap({ center, zoom }) {
   return null;
 }
 
+// Registry of state-level parcel services. Each one is an Esri FeatureServer
+// that publishes a statewide cadastral layer. Performance note: Esri's
+// featureLayer fetches features by viewport bbox on every pan/zoom — when
+// you're outside a state, that state's service request returns empty fast
+// and costs almost nothing, so adding more states here doesn't slow the map
+// down meaningfully. To add a state you need an open Esri FeatureServer URL
+// for its statewide parcels layer (most states don't publish one openly —
+// it's usually county-by-county. Drop new ones here as you find them).
+const STATE_PARCEL_SERVICES = [
+  {
+    code: "FL",
+    label: "Florida",
+    url: "https://services9.arcgis.com/Gh9awoU677aKree0/ArcGIS/rest/services/Florida_Statewide_Cadastral/FeatureServer/0",
+  },
+];
+
 function ParcelOverlay() {
   const map = useMap();
 
   useEffect(() => {
-    const layer = EL.featureLayer({
-      url: "https://services9.arcgis.com/Gh9awoU677aKree0/ArcGIS/rest/services/Florida_Statewide_Cadastral/FeatureServer/0",
-      style: () => ({
-        color: "#00ffff",
-        weight: 1,
-        fillOpacity: 0,
-        opacity: 0.85,
-      }),
-    }).addTo(map);
+    const layers = STATE_PARCEL_SERVICES.map((service) =>
+      EL.featureLayer({
+        url: service.url,
+        // Keep the wire small: drop fields we don't render. Esri respects the
+        // outFields list so it doesn't ship every attribute per parcel.
+        fields: ["OBJECTID"],
+        // Don't fetch parcels until the user is zoomed in enough to actually
+        // see them — at state-wide zoom you'd be downloading hundreds of
+        // thousands of polygons that render as a solid blob anyway.
+        minZoom: 15,
+        style: () => ({
+          color: "#00ffff",
+          weight: 1,
+          fillOpacity: 0,
+          opacity: 0.85,
+        }),
+      }).addTo(map),
+    );
 
     return () => {
-      map.removeLayer(layer);
+      layers.forEach((layer) => {
+        try { map.removeLayer(layer); } catch { /* layer already gone */ }
+      });
     };
   }, [map]);
 
@@ -1531,6 +1559,65 @@ export default function SurveyPointAppPrototype() {
     setLoadingPoints(false);
   };
 
+  // Load every point the company owns, no radius. Heavier payload but lets
+  // the user pan the map freely and see everything without re-searching each
+  // area. Desktop button only (we don't want mobile to pull 50k rows on cell).
+  const loadAllPoints = async () => {
+    if (!activeCompany?.id) {
+      setPointLoadMessage("Create or join a company before loading database points.");
+      return;
+    }
+    setLoadingPoints(true);
+    setPointLoadMessage("Loading every company point...");
+
+    const { data, error } = await fetchAllCompanyPoints({
+      companyId: activeCompany.id,
+      resultLimit: 50000,
+    });
+
+    if (error) {
+      console.error(error);
+      setPointLoadMessage(error.message || "Could not load all company points.");
+      setLoadingPoints(false);
+      return;
+    }
+
+    const mapped = (data || []).map((row) => ({
+      id: String(row.point_id || row.id),
+      dbId: row.dbId || row.db_id || row.id,
+      name: row.name || String(row.point_id || row.id),
+      status: row.status || "found",
+      reliability: row.reliability || "C",
+      lat: row.latitude,
+      lng: row.longitude,
+      northing: row.northing || "",
+      easting: row.easting || "",
+      coordinateSystem: row.coordinate_system || "NAD83 / Florida North (ftUS) - EPSG:2238",
+      job: row.job || "",
+      sourceFile: row.source_file || row.job || "",
+      county: row.county || "",
+      crew: row.crew || "",
+      lastFound: row.last_found || "",
+      description: row.description || "",
+      distanceFeet: typeof row.distance_feet === "number" ? row.distance_feet : Number(row.distance_feet),
+      visibility: row.visibility,
+      access_level: row.access_level,
+      observations: [],
+      photos: [],
+    }));
+
+    setPoints(mapped);
+    setSelectedPointId(pointKey(mapped[0]) || null);
+    // Turn off GPS distance filter so all loaded points actually display.
+    setMaxDistanceFeet(999999999);
+    setPointLoadMessage(
+      mapped.length >= 50000
+        ? `Loaded the most recent ${mapped.length.toLocaleString()} company points (limit hit).`
+        : `Loaded all ${mapped.length.toLocaleString()} company points.`,
+    );
+    setLoadingPoints(false);
+  };
+
   const acceptGpsPosition = async (position, shouldLoadPoints = false, force = false) => {
     const next = {
       lat: position.coords.latitude,
@@ -1901,7 +1988,9 @@ export default function SurveyPointAppPrototype() {
                     key={option.id}
                     onClick={() => { setTab(option.id); setMobileMenuOpen(false); }}
                     className={`flex items-center gap-2 rounded-2xl px-4 py-3 text-left text-sm font-semibold ${
-                      active ? "bg-blue-600 text-white" : "bg-slate-50 text-slate-900 hover:bg-slate-100"
+                      active
+                        ? "bg-blue-600 text-white"
+                        : "bg-slate-50 text-slate-900 hover:bg-slate-100 dark:bg-slate-800 dark:text-slate-100 dark:hover:bg-slate-700"
                     }`}
                   >
                     <Icon size={16} /> {option.label}
@@ -2036,6 +2125,15 @@ export default function SurveyPointAppPrototype() {
                   <Search size={16} className="mr-2" /> Search This Area
                 </Button>
                 <Button
+                  onClick={loadAllPoints}
+                  variant="secondary"
+                  className="hidden rounded-2xl px-4 py-3 md:inline-flex"
+                  disabled={loadingPoints || !activeCompany?.id}
+                  title="Loads every point your company owns so you can pan freely. Desktop only — too heavy for cell data."
+                >
+                  <Database size={16} className="mr-2" /> Show All My Points
+                </Button>
+                <Button
                   onClick={() => setLayersOpen((v) => !v)}
                   variant="secondary"
                   className="rounded-2xl px-4 py-3"
@@ -2046,8 +2144,8 @@ export default function SurveyPointAppPrototype() {
               </div>
 
               {layersOpen && (
-                <div className="rounded-2xl border border-slate-200 bg-white p-3 shadow-sm">
-                  <div className="mb-2 text-xs font-bold uppercase tracking-wide text-slate-500">Basemap</div>
+                <div className="rounded-2xl border border-slate-200 bg-white p-3 shadow-sm dark:border-slate-700 dark:bg-slate-900">
+                  <div className="mb-2 text-xs font-bold uppercase tracking-wide text-slate-500 dark:text-slate-400">Basemap</div>
                   <div className="grid grid-cols-2 gap-1 md:grid-cols-5">
                     {[
                       { id: "aerial", label: "Aerial", icon: Satellite },
@@ -2063,7 +2161,9 @@ export default function SurveyPointAppPrototype() {
                           key={option.id}
                           onClick={() => setBasemap(option.id)}
                           className={`flex items-center gap-2 rounded-xl px-3 py-2 text-left text-sm font-semibold ${
-                            active ? "bg-slate-950 text-white" : "bg-slate-50 text-slate-800 hover:bg-slate-100"
+                            active
+                              ? "bg-slate-950 text-white dark:bg-blue-600"
+                              : "bg-slate-50 text-slate-800 hover:bg-slate-100 dark:bg-slate-800 dark:text-slate-100 dark:hover:bg-slate-700"
                           }`}
                         >
                           <Icon size={14} /> {option.label}
@@ -2071,13 +2171,15 @@ export default function SurveyPointAppPrototype() {
                       );
                     })}
                   </div>
-                  <div className="mt-3 h-px bg-slate-200" />
-                  <div className="mt-3 mb-2 text-xs font-bold uppercase tracking-wide text-slate-500">Overlays & GPS</div>
+                  <div className="mt-3 h-px bg-slate-200 dark:bg-slate-700" />
+                  <div className="mt-3 mb-2 text-xs font-bold uppercase tracking-wide text-slate-500 dark:text-slate-400">Overlays &amp; GPS</div>
                   <div className="grid grid-cols-2 gap-1 md:grid-cols-3">
                     <button
                       onClick={() => setShowParcels((v) => !v)}
                       className={`flex items-center justify-between gap-2 rounded-xl px-3 py-2 text-left text-sm font-semibold ${
-                        showParcels ? "bg-slate-950 text-white" : "bg-slate-50 text-slate-800 hover:bg-slate-100"
+                        showParcels
+                          ? "bg-slate-950 text-white dark:bg-blue-600"
+                          : "bg-slate-50 text-slate-800 hover:bg-slate-100 dark:bg-slate-800 dark:text-slate-100 dark:hover:bg-slate-700"
                       }`}
                     >
                       <span className="flex items-center gap-2"><Filter size={14} /> Parcels</span>
@@ -2088,10 +2190,10 @@ export default function SurveyPointAppPrototype() {
                       disabled={!userLocation}
                       className={`flex items-center justify-between gap-2 rounded-xl px-3 py-2 text-left text-sm font-semibold ${
                         !userLocation
-                          ? "cursor-not-allowed bg-slate-100 text-slate-400"
+                          ? "cursor-not-allowed bg-slate-100 text-slate-400 dark:bg-slate-800 dark:text-slate-600"
                           : followUser
-                            ? "bg-slate-950 text-white"
-                            : "bg-slate-50 text-slate-800 hover:bg-slate-100"
+                            ? "bg-slate-950 text-white dark:bg-blue-600"
+                            : "bg-slate-50 text-slate-800 hover:bg-slate-100 dark:bg-slate-800 dark:text-slate-100 dark:hover:bg-slate-700"
                       }`}
                     >
                       <span className="flex items-center gap-2"><LocateFixed size={14} /> Follow GPS</span>
@@ -2100,7 +2202,7 @@ export default function SurveyPointAppPrototype() {
                     {!followUser && userLocation && (
                       <button
                         onClick={() => setFollowUser(true)}
-                        className="flex items-center gap-2 rounded-xl bg-slate-50 px-3 py-2 text-left text-sm font-semibold text-slate-800 hover:bg-slate-100"
+                        className="flex items-center gap-2 rounded-xl bg-slate-50 px-3 py-2 text-left text-sm font-semibold text-slate-800 hover:bg-slate-100 dark:bg-slate-800 dark:text-slate-100 dark:hover:bg-slate-700"
                       >
                         <Target size={14} /> Recenter
                       </button>

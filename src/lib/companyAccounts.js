@@ -459,3 +459,41 @@ export async function fetchNearbyCompanyPoints({
     error: null,
   };
 }
+
+// "Show all my points" — desktop view that returns every company point
+// regardless of distance, so the user can pan the map and see everything.
+// Excludes community-pool points from other companies (those still browse
+// by area). Capped server-side at 100,000.
+export async function fetchAllCompanyPoints({ companyId, resultLimit = 50000 }) {
+  if (!companyId) {
+    return { data: [], error: { message: "No company selected." } };
+  }
+  const { data, error } = await supabase.rpc("all_company_points", {
+    target_company_id: companyId,
+    result_limit: Number(resultLimit) || 50000,
+  });
+  if (error) return { data: [], error };
+
+  const normalized = (data || []).map((point) => ({
+    ...point,
+    id: point.id,
+    point_id: point.point_id,
+    name: point.name || point.point_id || point.marker_type || "Point",
+    description: point.description || "",
+    marker_type: point.marker_type || "",
+    latitude: Number(point.latitude),
+    longitude: Number(point.longitude),
+    lat: Number(point.latitude),
+    lng: Number(point.longitude),
+    northing: point.northing,
+    easting: point.easting,
+    elevation: point.elevation,
+    distance_feet: point.distance_feet,
+    details_locked: point.details_locked,
+    coordinates_locked: point.coordinates_locked,
+    visibility: point.visibility,
+    access_level: point.access_level,
+  }));
+
+  return { data: normalized, error: null };
+}
