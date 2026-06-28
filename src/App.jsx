@@ -23,6 +23,7 @@ import {
   Send,
   Settings as SettingsIcon,
   Target,
+  Trash2,
   Upload,
   Users,
   WifiOff,
@@ -68,6 +69,7 @@ import {
 import {
   cleanupCompanyDuplicatePoints,
   deleteCompanyPoint as deleteCompanyPointRpc,
+  deleteCompanyPointsBulk,
   geocodeAddress,
 } from "@/lib/dataIntegration";
 import { DataImportPanel } from "@/components/DataImportPanel";
@@ -298,6 +300,76 @@ const STATE_PARCEL_SERVICES = [
     url: "https://services9.arcgis.com/Gh9awoU677aKree0/ArcGIS/rest/services/Florida_Statewide_Cadastral/FeatureServer/0",
   },
 ];
+
+// Drag-rectangle selection on the map. When `active` is true:
+//  - map panning is disabled
+//  - cursor switches to crosshair
+//  - mousedown + drag + mouseup draws a rubber-band rectangle
+//  - on release, fires onBoxComplete(bounds) so the caller can find all
+//    markers inside and add them to the selection set.
+// Additive by design — each box ADDS to the selection, so the user can pan
+// (by toggling off briefly) and box-select multiple disjoint regions, or
+// re-enable and grow the selection in one mode.
+function MapBoxSelector({ active, onBoxComplete }) {
+  const map = useMap();
+
+  useEffect(() => {
+    if (!active) return undefined;
+
+    const container = map.getContainer();
+    map.dragging.disable();
+    map.boxZoom.disable();
+    map.doubleClickZoom.disable();
+    container.style.cursor = "crosshair";
+
+    let startLatLng = null;
+    let rectLayer = null;
+
+    const onDown = (e) => {
+      startLatLng = e.latlng;
+      rectLayer = L.rectangle([startLatLng, startLatLng], {
+        color: "#3b82f6",
+        weight: 2,
+        fillColor: "#3b82f6",
+        fillOpacity: 0.12,
+        interactive: false,
+      }).addTo(map);
+    };
+
+    const onMove = (e) => {
+      if (!startLatLng || !rectLayer) return;
+      rectLayer.setBounds(L.latLngBounds(startLatLng, e.latlng));
+    };
+
+    const onUp = (e) => {
+      if (!startLatLng || !rectLayer) return;
+      const bounds = L.latLngBounds(startLatLng, e.latlng);
+      try { map.removeLayer(rectLayer); } catch { /* ok */ }
+      rectLayer = null;
+      startLatLng = null;
+      onBoxComplete?.(bounds);
+    };
+
+    map.on("mousedown", onDown);
+    map.on("mousemove", onMove);
+    map.on("mouseup", onUp);
+
+    return () => {
+      map.off("mousedown", onDown);
+      map.off("mousemove", onMove);
+      map.off("mouseup", onUp);
+      if (rectLayer) {
+        try { map.removeLayer(rectLayer); } catch { /* ok */ }
+      }
+      map.dragging.enable();
+      map.boxZoom.enable();
+      map.doubleClickZoom.enable();
+      container.style.cursor = "";
+    };
+  }, [map, active, onBoxComplete]);
+
+  return null;
+}
 
 function ParcelOverlay() {
   const map = useMap();
@@ -574,7 +646,7 @@ function MapFlyToTarget({ target }) {
   return null;
 }
 
-function GisMap({ points, selectedPoint, userLocation, followUser, onUserPan, onMapCenterChange, flyToTarget, onSelectPoint, basemap, showParcels, savedView }) {
+function GisMap({ points, selectedPoint, userLocation, followUser, onUserPan, onMapCenterChange, flyToTarget, onSelectPoint, basemap, showParcels, savedView, boxSelectActive, onBoxSelect }) {
   const fallbackCenter = [30.7, -86.1];
   // Restore where the user last was on the map (preserved in parent state) so
   // bouncing to Points / Settings / Team and back doesn't snap us to GPS. If
@@ -605,6 +677,7 @@ function GisMap({ points, selectedPoint, userLocation, followUser, onUserPan, on
           <MapInteractionCapture onUserInteract={onUserPan} />
           <MapCenterTracker onCenterChange={onMapCenterChange} />
           <MapFlyToTarget target={flyToTarget} />
+          <MapBoxSelector active={!!boxSelectActive} onBoxComplete={onBoxSelect} />
           {showParcels && <ParcelOverlay />}
           {followUser && userLocation && <RecenterMap center={[userLocation.lat, userLocation.lng]} zoom={16} />}
           {userLocation && (
@@ -1228,6 +1301,12 @@ export default function SurveyPointAppPrototype() {
   const [selectedDbIds, setSelectedDbIds] = useState(() => new Set());
   const [selectionBusy, setSelectionBusy] = useState(false);
   const [selectionMessage, setSelectionMessage] = useState("");
+
+  // Box-select-on-map mode (desktop). Same selectedDbIds set as the Points
+  // tab so the selection is unified across both views.
+  const [mapBoxSelectActive, setMapBoxSelectActive] = useState(false);
+  const [mapActionBusy, setMapActionBusy] = useState(false);
+  const [mapActionMessage, setMapActionMessage] = useState("");
 
   const [locationMessage, setLocationMessage] = useState("Tap You Are Here to use phone GPS.");
   const [gpsWatchId, setGpsWatchId] = useState(null);
@@ -2134,6 +2213,20 @@ export default function SurveyPointAppPrototype() {
                   <Database size={16} className="mr-2" /> Show All My Points
                 </Button>
                 <Button
+                  onClick={() => {
+                    setMapBoxSelectActive((v) => !v);
+                    setMapActionMessage("");
+                  }}
+                  variant="secondary"
+                  className={`hidden rounded-2xl px-4 py-3 md:inline-flex ${
+                    mapBoxSelectActive ? "border border-blue-400 bg-blue-50 text-blue-900 hover:bg-blue-100" : ""
+                  }`}
+                  disabled={loadingPoints}
+                  title="Drag a rectangle on the map to select points. Selection adds across boxes so you can multi-select."
+                >
+                  <Filter size={16} className="mr-2" /> {mapBoxSelectActive ? "Drag to Select…" : "Select on Map"}
+                </Button>
+                <Button
                   onClick={() => setLayersOpen((v) => !v)}
                   variant="secondary"
                   className="rounded-2xl px-4 py-3"
@@ -2222,7 +2315,126 @@ export default function SurveyPointAppPrototype() {
                 onSelectPoint={selectPoint}
                 basemap={basemap}
                 showParcels={showParcels}
+                boxSelectActive={mapBoxSelectActive}
+                onBoxSelect={(bounds) => {
+                  // Add every visible point inside the dragged rectangle to
+                  // the shared selection set. Additive, so the user can box
+                  // multiple regions in one go.
+                  setSelectedDbIds((prev) => {
+                    const next = new Set(prev);
+                    filteredPoints.forEach((p) => {
+                      if (!p.dbId) return;
+                      if (!Number.isFinite(p.lat) || !Number.isFinite(p.lng)) return;
+                      if (bounds.contains([p.lat, p.lng])) next.add(p.dbId);
+                    });
+                    return next;
+                  });
+                  setMapActionMessage("");
+                }}
               />
+
+              {(mapBoxSelectActive || selectedDbIds.size > 0) && (() => {
+                const eligible = filteredPoints.filter(
+                  (p) => p.dbId && selectedDbIds.has(p.dbId) && (p.access_level === "full" || !p.access_level),
+                );
+                const sharedCount = eligible.filter((p) => p.visibility === "community").length;
+                const deletableCount = eligible.length;
+
+                const runDeleteSelected = async () => {
+                  if (deletableCount === 0) return;
+                  if (!window.confirm(
+                    `Permanently DELETE ${deletableCount} selected point${deletableCount === 1 ? "" : "s"} from PointVault? ` +
+                    `Also removes them from the community pool if shared. ` +
+                    `This cannot be undone.`,
+                  )) return;
+                  setMapActionBusy(true);
+                  setMapActionMessage("");
+                  try {
+                    const { data, error } = await deleteCompanyPointsBulk(eligible.map((p) => p.dbId));
+                    if (error) throw error;
+                    const deleted = Number(data?.deleted || 0);
+                    const failed = Number(data?.failed || 0);
+                    setMapActionMessage(`Deleted ${deleted}${failed ? `, failed ${failed}` : ""}.`);
+                    setSelectedDbIds(new Set());
+                    await loadNearbyPoints();
+                  } catch (err) {
+                    setMapActionMessage(err?.message || "Delete failed.");
+                  } finally {
+                    setMapActionBusy(false);
+                  }
+                };
+
+                const runUnshareSelected = async () => {
+                  if (sharedCount === 0) return;
+                  if (!window.confirm(
+                    `Take ${sharedCount} selected point${sharedCount === 1 ? "" : "s"} back from the community pool? ` +
+                    `Other companies will no longer see these. Reversible.`,
+                  )) return;
+                  setMapActionBusy(true);
+                  setMapActionMessage("");
+                  try {
+                    const sharedIds = eligible.filter((p) => p.visibility === "community").map((p) => p.dbId);
+                    const result = await unshareCompanyPointsBulk(sharedIds);
+                    setMapActionMessage(`Unshared ${result.unshared}${result.failed ? `, failed ${result.failed}` : ""}.`);
+                    setSelectedDbIds(new Set());
+                    await loadNearbyPoints();
+                  } catch (err) {
+                    setMapActionMessage(err?.message || "Unshare failed.");
+                  } finally {
+                    setMapActionBusy(false);
+                  }
+                };
+
+                return (
+                  <Card className="rounded-3xl border-0 bg-blue-50 shadow-sm dark:bg-slate-800">
+                    <CardContent className="p-3">
+                      <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
+                        <div className="text-sm font-bold text-blue-950 dark:text-blue-100">
+                          {selectedDbIds.size === 0
+                            ? "Drag a rectangle on the map to select points."
+                            : `${selectedDbIds.size} selected${sharedCount > 0 ? ` (${sharedCount} shared)` : ""}`}
+                        </div>
+                        <div className="flex flex-wrap items-center gap-2">
+                          <Button
+                            onClick={runUnshareSelected}
+                            disabled={mapActionBusy || sharedCount === 0}
+                            variant="secondary"
+                            className="rounded-2xl border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-900 hover:bg-amber-100"
+                          >
+                            <XCircle size={14} className="mr-2" />
+                            {mapActionBusy ? "Working…" : `Unshare${sharedCount ? ` (${sharedCount})` : ""}`}
+                          </Button>
+                          <Button
+                            onClick={runDeleteSelected}
+                            disabled={mapActionBusy || deletableCount === 0}
+                            variant="secondary"
+                            className="rounded-2xl border border-red-300 bg-red-50 px-3 py-2 text-xs text-red-900 hover:bg-red-100"
+                          >
+                            <Trash2 size={14} className="mr-2" />
+                            {mapActionBusy ? "Working…" : `Delete${deletableCount ? ` (${deletableCount})` : ""}`}
+                          </Button>
+                          <Button
+                            onClick={() => {
+                              setSelectedDbIds(new Set());
+                              setMapBoxSelectActive(false);
+                              setMapActionMessage("");
+                            }}
+                            variant="secondary"
+                            className="rounded-2xl px-3 py-2 text-xs"
+                          >
+                            Cancel
+                          </Button>
+                        </div>
+                      </div>
+                      {mapActionMessage && (
+                        <div className="mt-2 rounded-2xl bg-white p-2 text-xs font-semibold text-blue-900 ring-1 ring-blue-200">
+                          {mapActionMessage}
+                        </div>
+                      )}
+                    </CardContent>
+                  </Card>
+                );
+              })()}
 
               <Card className="rounded-2xl border-0 shadow-sm">
                 <CardContent className="p-3 text-xs">

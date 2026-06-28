@@ -738,6 +738,14 @@ export async function deleteCompanyPoint(pointId) {
   return supabase.rpc("delete_company_point", { target_company_point_id: pointId });
 }
 
+// Bulk delete — used by the box-select-on-map flow. Returns { deleted, failed }.
+// Per-row work goes through delete_company_point so observation cleanup happens.
+export async function deleteCompanyPointsBulk(pointIds) {
+  const ids = Array.isArray(pointIds) ? pointIds.filter(Boolean) : [];
+  if (ids.length === 0) return { data: { deleted: 0, failed: 0 }, error: null };
+  return supabase.rpc("delete_company_points_bulk", { target_point_ids: ids });
+}
+
 export async function cleanupCompanyDuplicatePoints(companyId, duplicateToleranceFt = 1.0) {
   return supabase.rpc("cleanup_company_duplicate_points", {
     target_company_id: companyId,
