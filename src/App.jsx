@@ -2749,6 +2749,8 @@ export default function SurveyPointAppPrototype() {
               defaultCoordEpsg={defaultCoordEpsg}
               onDefaultCoordChange={updateDefaultCoord}
               session={session}
+              activeCompany={activeCompany}
+              activeMembership={activeMembership}
             />
           )}
         </section>

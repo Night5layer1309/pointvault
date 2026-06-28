@@ -220,6 +220,62 @@ export async function getCompanyCommunityStatus(companyId) {
   return data || null;
 }
 
+// The "I'm out / reset my data" nuclear button. Owner-only on the server.
+// Wipes every point, observation, and import this company has, plus resets
+// community counters, but leaves the company / team / billing alone. Raw
+// files in storage are NOT deleted by this call — pass the returned
+// storage_prefix to clearCompanyStorageObjects to finish the cleanup.
+export async function wipeCompanyData(companyId) {
+  if (!companyId) throw new Error("No company selected.");
+  const { data, error } = await supabase.rpc("wipe_company_data", {
+    target_company_id: companyId,
+  });
+  if (error) throw error;
+  return data || {};
+}
+
+// Walks the pointvault-imports bucket under the given company's prefix and
+// deletes every object. Storage doesn't have a "delete prefix" op so we
+// list + delete in batches. Returns the total count deleted.
+export async function clearCompanyStorageObjects(storagePrefix, bucket = "pointvault-imports") {
+  if (!storagePrefix) return 0;
+  let total = 0;
+  // Recursively walks one folder level at a time. The bucket layout the app
+  // writes is companyId/jobId/{raw,processed}/file, so we list at the root
+  // then drill into each folder.
+  const walk = async (prefix) => {
+    const { data: entries, error } = await supabase.storage
+      .from(bucket)
+      .list(prefix, { limit: 1000, offset: 0 });
+    if (error) throw error;
+    if (!entries || entries.length === 0) return;
+
+    const filePaths = [];
+    const folderPaths = [];
+    for (const entry of entries) {
+      const path = prefix ? `${prefix}/${entry.name}` : entry.name;
+      // Folders show up with no id; files have an id.
+      if (entry.id) filePaths.push(path);
+      else folderPaths.push(path);
+    }
+    for (const folder of folderPaths) await walk(folder);
+
+    if (filePaths.length > 0) {
+      // Remove in chunks so we don't blow past per-call limits.
+      const chunk = 100;
+      for (let i = 0; i < filePaths.length; i += chunk) {
+        const slice = filePaths.slice(i, i + chunk);
+        const { error: removeError } = await supabase.storage.from(bucket).remove(slice);
+        if (removeError) throw removeError;
+        total += slice.length;
+      }
+    }
+  };
+
+  await walk(storagePrefix);
+  return total;
+}
+
 // Diagnose + fix the share counter when it drifts (e.g. company_points
 // flagged community don't have matching observations). Returns before/after
 // numbers + a `done` flag so the UI can loop chunked calls until everything

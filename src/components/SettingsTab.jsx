@@ -1,8 +1,8 @@
 import React, { useState } from "react";
-import { BookOpen, FileText, Globe, KeyRound, Mail, MessageSquare, Moon, Phone, Send, Settings as SettingsIcon, Sun } from "lucide-react";
+import { AlertTriangle, BookOpen, FileText, Globe, KeyRound, Mail, MessageSquare, Moon, Phone, Send, Settings as SettingsIcon, Sun, Trash2 } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { setUserPassword } from "@/lib/companyAccounts";
+import { clearCompanyStorageObjects, setUserPassword, wipeCompanyData } from "@/lib/companyAccounts";
 
 // Public contact channels. Edit these in one place — they feed both the in-app
 // Contact form and anything you print (business cards, store listings, etc.).
@@ -243,6 +243,7 @@ function SectionTabs({ section, onSection }) {
     { id: "contact", label: "Contact", icon: MessageSquare },
     { id: "legal", label: "Legal", icon: FileText },
     { id: "howto", label: "How-To", icon: BookOpen },
+    { id: "danger", label: "Danger Zone", icon: AlertTriangle },
   ];
   return (
     <div className="flex flex-wrap gap-2">
@@ -656,6 +657,137 @@ function HowToBody() {
   );
 }
 
+function DangerBody({ company, membership }) {
+  const isOwner = membership?.role === "owner";
+  const [confirmName, setConfirmName] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [result, setResult] = useState(null);
+  const [error, setError] = useState("");
+
+  // Friendlier UX than a window.confirm: the button stays disabled until the
+  // user types the company name exactly. No way to fat-finger this.
+  const namesMatch = company?.name
+    && confirmName.trim().toLowerCase() === company.name.trim().toLowerCase();
+
+  const runWipe = async () => {
+    if (!company?.id || !namesMatch) return;
+    setBusy(true);
+    setResult(null);
+    setError("");
+    try {
+      const rpcResult = await wipeCompanyData(company.id);
+      let storageDeleted = 0;
+      try {
+        storageDeleted = await clearCompanyStorageObjects(rpcResult?.storage_prefix);
+      } catch (storageErr) {
+        console.warn("Storage cleanup failed:", storageErr);
+      }
+      setResult({ ...rpcResult, storage_objects_deleted: storageDeleted });
+      setConfirmName("");
+    } catch (err) {
+      setError(err?.message || "Wipe failed.");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  if (!company?.id) {
+    return (
+      <div className="rounded-2xl border border-dashed border-slate-300 p-4 text-sm text-slate-500 dark:border-slate-600 dark:text-slate-300">
+        No company selected.
+      </div>
+    );
+  }
+
+  if (!isOwner) {
+    return (
+      <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm leading-6 text-amber-900 dark:border-amber-800 dark:bg-amber-950 dark:text-amber-100">
+        <div className="flex items-center gap-2 font-bold"><AlertTriangle size={16} /> Owner-only zone</div>
+        <p className="mt-2">
+          Only the company <strong>owner</strong> can wipe all data. If you need to reset, ask the owner of
+          <strong> {company.name} </strong>to do it from their account.
+        </p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-4">
+      <div className="rounded-2xl border-2 border-red-300 bg-red-50 p-4 dark:border-red-700 dark:bg-red-950">
+        <div className="flex items-center gap-2 font-black text-red-900 dark:text-red-100">
+          <AlertTriangle size={18} /> Wipe all of {company.name}'s survey data
+        </div>
+        <p className="mt-2 text-sm leading-6 text-red-900 dark:text-red-100">
+          This is the "I'm out" / "let me start over" button. It permanently deletes:
+        </p>
+        <ul className="mt-2 list-inside list-disc text-sm leading-6 text-red-900 dark:text-red-100">
+          <li>Every point your company owns (including all observations on them)</li>
+          <li>Every shared-to-community contribution you've made (other companies stop seeing them)</li>
+          <li>Every import job + all raw CSV/TXT files in cloud storage</li>
+          <li>Community Standing counters reset to zero</li>
+        </ul>
+        <p className="mt-2 text-sm leading-6 text-red-900 dark:text-red-100">
+          <strong>Kept:</strong> your account, the company itself, team members, invite history, and active Stripe
+          subscription. You can re-import fresh files immediately afterward.
+        </p>
+        <p className="mt-2 text-sm font-bold leading-6 text-red-900 dark:text-red-100">
+          This cannot be undone.
+        </p>
+
+        <div className="mt-4 rounded-2xl bg-white p-3 dark:bg-slate-900">
+          <label className="grid gap-2 text-sm font-semibold text-slate-700 dark:text-slate-200">
+            <span>To confirm, type the company name <code className="rounded bg-slate-100 px-1 dark:bg-slate-800">{company.name}</code> exactly:</span>
+            <input
+              type="text"
+              value={confirmName}
+              onChange={(event) => setConfirmName(event.target.value)}
+              placeholder={company.name}
+              autoComplete="off"
+              autoCorrect="off"
+              autoCapitalize="off"
+              spellCheck={false}
+              className="rounded-2xl border border-slate-300 bg-white px-4 py-3 text-sm outline-none focus:border-red-500 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100"
+            />
+          </label>
+        </div>
+
+        <Button
+          onClick={runWipe}
+          disabled={!namesMatch || busy}
+          className="mt-3 w-full rounded-2xl bg-red-700 py-4 text-white hover:bg-red-800 disabled:opacity-50"
+        >
+          <Trash2 size={16} className="mr-2" />
+          {busy ? "Wiping..." : namesMatch ? `Wipe all of ${company.name}'s data` : "Type the company name to enable"}
+        </Button>
+      </div>
+
+      {result && (
+        <div className="rounded-2xl border border-emerald-200 bg-emerald-50 p-4 text-sm font-semibold text-emerald-900 dark:border-emerald-800 dark:bg-emerald-950 dark:text-emerald-100">
+          <div className="font-black">Done. Wiped:</div>
+          <div className="mt-2 grid gap-1">
+            <div>Points deleted: {Number(result.company_points_deleted || 0).toLocaleString()}</div>
+            <div>Shared-to-community observations removed: {Number(result.observations_deleted || 0).toLocaleString()}</div>
+            <div>Community markers fully deleted (you were the only contributor): {Number(result.community_points_deleted || 0).toLocaleString()}</div>
+            <div>Import jobs deleted: {Number(result.import_jobs_deleted || 0).toLocaleString()}</div>
+            <div>Staging rows cleared: {Number(result.staging_deleted || 0).toLocaleString()}</div>
+            <div>Review groups cleared: {Number(result.review_groups_deleted || 0).toLocaleString()}</div>
+            <div>Raw files deleted from cloud storage: {Number(result.storage_objects_deleted || 0).toLocaleString()}</div>
+          </div>
+          <p className="mt-3 text-xs opacity-90">
+            Refresh the Map tab to see the empty slate. Your account and subscription are untouched.
+          </p>
+        </div>
+      )}
+
+      {error && (
+        <div className="rounded-2xl border border-red-200 bg-red-50 p-3 text-xs font-semibold text-red-800 dark:border-red-800 dark:bg-red-950 dark:text-red-100">
+          {error}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export function SettingsTab(props) {
   const [section, setSection] = useState("settings");
   return (
@@ -679,6 +811,7 @@ export function SettingsTab(props) {
           {section === "contact" && <ContactBody session={props.session} />}
           {section === "legal" && <LegalBody />}
           {section === "howto" && <HowToBody />}
+          {section === "danger" && <DangerBody company={props.activeCompany} membership={props.activeMembership} />}
         </CardContent>
       </Card>
     </div>
