@@ -2,7 +2,7 @@ import React, { useEffect, useState } from "react";
 import { AlertTriangle, BarChart3, BookOpen, FileText, Globe, KeyRound, Mail, MessageSquare, Moon, Phone, Send, Settings as SettingsIcon, Sun, Trash2 } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { clearCompanyStorageObjects, getCommunityAdminStats, isFounderUser, setUserPassword, wipeCompanyData } from "@/lib/companyAccounts";
+import { cleanupOrphanedCommunityPoints, clearCompanyStorageObjects, getCommunityAdminStats, isFounderUser, setUserPassword, wipeCompanyData } from "@/lib/companyAccounts";
 
 // Public contact channels. Edit these in one place — they feed both the in-app
 // Contact form and anything you print (business cards, store listings, etc.).
@@ -657,6 +657,8 @@ function AdminBody({ session }) {
   const [stats, setStats] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const [cleanupBusy, setCleanupBusy] = useState(false);
+  const [cleanupResult, setCleanupResult] = useState(null);
 
   const load = async () => {
     setLoading(true);
@@ -668,6 +670,26 @@ function AdminBody({ session }) {
       setError(err?.message || "Could not load admin stats.");
     } finally {
       setLoading(false);
+    }
+  };
+
+  const runCleanup = async () => {
+    if (!window.confirm(
+      "Delete every community_points row that has no backing observations? " +
+      "These are orphan rows from earlier code paths and never appear on any map, " +
+      "but they inflate the count above. Safe to run.",
+    )) return;
+    setCleanupBusy(true);
+    setCleanupResult(null);
+    setError("");
+    try {
+      const result = await cleanupOrphanedCommunityPoints();
+      setCleanupResult(result);
+      await load();
+    } catch (err) {
+      setError(err?.message || "Cleanup failed.");
+    } finally {
+      setCleanupBusy(false);
     }
   };
 
@@ -729,6 +751,33 @@ function AdminBody({ session }) {
             <div className="mt-1 text-xs font-semibold text-slate-500 dark:text-slate-400">{tile.hint}</div>
           </div>
         ))}
+      </div>
+
+      <div className="rounded-2xl border border-slate-200 bg-white p-4 dark:border-slate-700 dark:bg-slate-900">
+        <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+          <div className="min-w-0">
+            <div className="font-black text-slate-950 dark:text-slate-100">Cleanup orphaned community points</div>
+            <p className="mt-1 text-xs leading-5 text-slate-500 dark:text-slate-400">
+              Drops every <code>community_points</code> row with no backing observations. These are
+              invisible on the map (the visible RPC filters them out) but they inflate the
+              "Community points" tile above. Safe to re-run any time.
+            </p>
+          </div>
+          <Button
+            onClick={runCleanup}
+            disabled={cleanupBusy}
+            variant="secondary"
+            className="shrink-0 rounded-2xl px-3 py-2 text-xs"
+          >
+            {cleanupBusy ? "Cleaning..." : "Cleanup orphans"}
+          </Button>
+        </div>
+        {cleanupResult && (
+          <div className="mt-3 rounded-2xl border border-emerald-200 bg-emerald-50 p-3 text-xs font-semibold text-emerald-900 dark:border-emerald-800 dark:bg-emerald-950 dark:text-emerald-100">
+            Deleted {Number(cleanupResult.deleted_orphans || 0).toLocaleString()} orphan rows.{" "}
+            Remaining community_points: {Number(cleanupResult.remaining_community_points || 0).toLocaleString()}.
+          </div>
+        )}
       </div>
 
       <div className="rounded-2xl border border-slate-200 bg-white p-4 dark:border-slate-700 dark:bg-slate-900">

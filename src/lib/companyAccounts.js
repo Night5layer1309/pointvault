@@ -239,6 +239,15 @@ export async function getCommunityAdminStats() {
   return data || null;
 }
 
+// One-shot scrub of orphaned community_points (rows with no backing
+// observations). Founder-only on the server. Returns { deleted_orphans,
+// remaining_community_points }. Safe to re-run any time.
+export async function cleanupOrphanedCommunityPoints() {
+  const { data, error } = await supabase.rpc("cleanup_orphaned_community_points");
+  if (error) throw error;
+  return data || {};
+}
+
 // The "I'm out / reset my data" nuclear button. Owner-only on the server.
 // Wipes every point, observation, and import this company has, plus resets
 // community counters, but leaves the company / team / billing alone. Raw
