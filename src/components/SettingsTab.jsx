@@ -1,8 +1,8 @@
-import React, { useState } from "react";
-import { AlertTriangle, BookOpen, FileText, Globe, KeyRound, Mail, MessageSquare, Moon, Phone, Send, Settings as SettingsIcon, Sun, Trash2 } from "lucide-react";
+import React, { useEffect, useState } from "react";
+import { AlertTriangle, BarChart3, BookOpen, FileText, Globe, KeyRound, Mail, MessageSquare, Moon, Phone, Send, Settings as SettingsIcon, Sun, Trash2 } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { clearCompanyStorageObjects, setUserPassword, wipeCompanyData } from "@/lib/companyAccounts";
+import { clearCompanyStorageObjects, getCommunityAdminStats, isFounderUser, setUserPassword, wipeCompanyData } from "@/lib/companyAccounts";
 
 // Public contact channels. Edit these in one place — they feed both the in-app
 // Contact form and anything you print (business cards, store listings, etc.).
@@ -237,14 +237,15 @@ const COORD_SYSTEM_GROUPS = [
 
 const COORD_SYSTEM_FLAT = COORD_SYSTEM_GROUPS.flatMap((group) => group.zones);
 
-function SectionTabs({ section, onSection }) {
+function SectionTabs({ section, onSection, showAdmin }) {
   const tabs = [
     { id: "settings", label: "Settings", icon: SettingsIcon },
     { id: "contact", label: "Contact", icon: MessageSquare },
     { id: "legal", label: "Legal", icon: FileText },
     { id: "howto", label: "How-To", icon: BookOpen },
+    showAdmin ? { id: "admin", label: "Admin", icon: BarChart3 } : null,
     { id: "danger", label: "Danger Zone", icon: AlertTriangle },
-  ];
+  ].filter(Boolean);
   return (
     <div className="flex flex-wrap gap-2">
       {tabs.map((tab) => {
@@ -559,11 +560,6 @@ function LegalBody() {
         <span className="text-xs font-semibold underline">View full policy →</span>
       </a>
 
-      <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4 text-amber-900 dark:border-amber-700 dark:bg-amber-950 dark:text-amber-200">
-        <div className="font-black">Placeholder language — have a lawyer review before relying on it.</div>
-        <p className="mt-1 text-xs">Replace this entire panel with text reviewed by counsel before onboarding outside companies.</p>
-      </div>
-
       <section>
         <h3 className="font-black text-slate-950 dark:text-slate-100">Not a substitute for a licensed surveyor</h3>
         <p className="mt-2">PointVault is a field productivity tool. The coordinates, descriptions, and observations stored or displayed in this app are working data shared by surveyors and crews for convenience. They are not a survey, a boundary determination, or a legal record. Do not use any point or attribute in this app as the basis for a land transaction, design decision, construction layout, or legal filing without independent verification by a licensed professional land surveyor in the jurisdiction the work is performed in.</p>
@@ -653,6 +649,150 @@ function HowToBody() {
           <li>Once you have full community access, you can leave <strong>field notes</strong> on any community point where your company has shared a point — they're permanent and visible to other full-access companies.</li>
         </ul>
       </section>
+    </div>
+  );
+}
+
+function AdminBody({ session }) {
+  const [stats, setStats] = useState(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
+
+  const load = async () => {
+    setLoading(true);
+    setError("");
+    try {
+      const next = await getCommunityAdminStats();
+      setStats(next);
+    } catch (err) {
+      setError(err?.message || "Could not load admin stats.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => { load(); }, []);
+
+  if (!isFounderUser(session)) {
+    // Belt-and-suspenders: SectionTabs hides the tab too, but if someone
+    // deep-links here we still gate.
+    return (
+      <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900 dark:border-amber-700 dark:bg-amber-950 dark:text-amber-100">
+        This view is restricted to the PointVault founder.
+      </div>
+    );
+  }
+
+  const totals = stats?.totals || {};
+  const contributors = Array.isArray(stats?.top_contributors) ? stats.top_contributors : [];
+  const recent = Array.isArray(stats?.recent_activity) ? stats.recent_activity : [];
+
+  const tileData = [
+    { label: "Companies", value: totals.companies, hint: "Signed up" },
+    { label: "Contributing", value: totals.companies_sharing, hint: "Have shared ≥1 point" },
+    { label: "Subscribed", value: totals.companies_subscribed, hint: "Active / trialing" },
+    { label: "Community points", value: totals.community_points, hint: "Unique monuments in the pool" },
+    { label: "Observations", value: totals.observations, hint: "Total contributions across companies" },
+    { label: "Last 7 days", value: totals.observations_last_7d, hint: "New observations" },
+    { label: "Last 30 days", value: totals.observations_last_30d, hint: "New observations" },
+  ];
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center justify-between gap-3">
+        <div>
+          <div className="flex items-center gap-2 font-black text-slate-950 dark:text-slate-100">
+            <BarChart3 size={18} /> Community engagement
+          </div>
+          <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+            Founder-only view across all companies. Refresh to pull the latest counts.
+          </p>
+        </div>
+        <Button onClick={load} disabled={loading} variant="secondary" className="rounded-2xl px-3 py-2 text-xs">
+          {loading ? "Loading..." : "Refresh"}
+        </Button>
+      </div>
+
+      {error && (
+        <div className="rounded-2xl border border-red-200 bg-red-50 p-3 text-xs font-semibold text-red-800 dark:border-red-800 dark:bg-red-950 dark:text-red-100">
+          {error}
+        </div>
+      )}
+
+      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+        {tileData.map((tile) => (
+          <div key={tile.label} className="rounded-2xl border border-slate-200 bg-white p-4 dark:border-slate-700 dark:bg-slate-900">
+            <div className="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">{tile.label}</div>
+            <div className="mt-1 text-2xl font-black text-slate-950 dark:text-slate-100">
+              {Number(tile.value || 0).toLocaleString()}
+            </div>
+            <div className="mt-1 text-xs font-semibold text-slate-500 dark:text-slate-400">{tile.hint}</div>
+          </div>
+        ))}
+      </div>
+
+      <div className="rounded-2xl border border-slate-200 bg-white p-4 dark:border-slate-700 dark:bg-slate-900">
+        <div className="mb-3 font-black text-slate-950 dark:text-slate-100">Top contributors (up to 50)</div>
+        {contributors.length === 0 ? (
+          <div className="text-xs text-slate-500 dark:text-slate-400">No companies yet.</div>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="min-w-full text-sm">
+              <thead>
+                <tr className="text-left text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
+                  <th className="px-2 py-2">Company</th>
+                  <th className="px-2 py-2">Shared</th>
+                  <th className="px-2 py-2">Subscription</th>
+                  <th className="px-2 py-2">Last share</th>
+                  <th className="px-2 py-2">Signed up</th>
+                </tr>
+              </thead>
+              <tbody>
+                {contributors.map((c) => (
+                  <tr key={c.company_id} className="border-t border-slate-100 dark:border-slate-800">
+                    <td className="px-2 py-2 font-semibold text-slate-900 dark:text-slate-100">{c.company_name}</td>
+                    <td className="px-2 py-2 text-slate-700 dark:text-slate-300">
+                      {Number(c.shared_count || 0).toLocaleString()}
+                    </td>
+                    <td className="px-2 py-2 text-xs font-semibold text-slate-600 dark:text-slate-300">{c.subscription_status}</td>
+                    <td className="px-2 py-2 text-xs text-slate-600 dark:text-slate-400">
+                      {c.last_share_at ? new Date(c.last_share_at).toLocaleString() : "—"}
+                    </td>
+                    <td className="px-2 py-2 text-xs text-slate-600 dark:text-slate-400">
+                      {c.company_created_at ? new Date(c.company_created_at).toLocaleDateString() : "—"}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+
+      <div className="rounded-2xl border border-slate-200 bg-white p-4 dark:border-slate-700 dark:bg-slate-900">
+        <div className="mb-3 font-black text-slate-950 dark:text-slate-100">Recent shares (last 25)</div>
+        {recent.length === 0 ? (
+          <div className="text-xs text-slate-500 dark:text-slate-400">No shares yet.</div>
+        ) : (
+          <ul className="space-y-2">
+            {recent.map((row, idx) => (
+              <li key={idx} className="rounded-xl bg-slate-50 px-3 py-2 text-xs dark:bg-slate-800">
+                <div className="font-semibold text-slate-900 dark:text-slate-100">
+                  {row.company_name} <span className="font-normal text-slate-500 dark:text-slate-400">
+                    · {row.created_at ? new Date(row.created_at).toLocaleString() : "—"}
+                  </span>
+                </div>
+                <div className="mt-0.5 text-slate-600 dark:text-slate-300">
+                  {row.marker_type || "Point"}{row.description ? ` · ${row.description}` : ""}
+                  {Number.isFinite(Number(row.latitude))
+                    ? ` · ${Number(row.latitude).toFixed(4)}, ${Number(row.longitude).toFixed(4)}`
+                    : ""}
+                </div>
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
     </div>
   );
 }
@@ -790,6 +930,7 @@ function DangerBody({ company, membership }) {
 
 export function SettingsTab(props) {
   const [section, setSection] = useState("settings");
+  const showAdmin = isFounderUser(props.session);
   return (
     <div className="space-y-4">
       <Card className="rounded-3xl border-0 shadow-xl dark:bg-slate-800">
@@ -801,7 +942,7 @@ export function SettingsTab(props) {
               Theme, defaults, legal terms, and how-to instructions.
             </p>
           </div>
-          <SectionTabs section={section} onSection={setSection} />
+          <SectionTabs section={section} onSection={setSection} showAdmin={showAdmin} />
         </CardContent>
       </Card>
 
@@ -811,6 +952,7 @@ export function SettingsTab(props) {
           {section === "contact" && <ContactBody session={props.session} />}
           {section === "legal" && <LegalBody />}
           {section === "howto" && <HowToBody />}
+          {section === "admin" && showAdmin && <AdminBody session={props.session} />}
           {section === "danger" && <DangerBody company={props.activeCompany} membership={props.activeMembership} />}
         </CardContent>
       </Card>

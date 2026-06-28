@@ -220,6 +220,25 @@ export async function getCompanyCommunityStatus(companyId) {
   return data || null;
 }
 
+// Founder email. Lives in one place so the UI gate and any future tools
+// all agree. The SERVER-side gate is in get_community_admin_stats — this is
+// only for hiding the UI from non-founders.
+export const FOUNDER_EMAIL = "skinners1309@gmail.com";
+
+export function isFounderUser(session) {
+  const email = session?.user?.email;
+  if (!email) return false;
+  return email.toLowerCase() === FOUNDER_EMAIL.toLowerCase();
+}
+
+// God-view of community engagement: totals, leaderboard, recent activity.
+// Server enforces the founder-email gate; this just calls it.
+export async function getCommunityAdminStats() {
+  const { data, error } = await supabase.rpc("get_community_admin_stats");
+  if (error) throw error;
+  return data || null;
+}
+
 // The "I'm out / reset my data" nuclear button. Owner-only on the server.
 // Wipes every point, observation, and import this company has, plus resets
 // community counters, but leaves the company / team / billing alone. Raw
