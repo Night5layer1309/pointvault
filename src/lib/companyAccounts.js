@@ -225,6 +225,17 @@ export async function getCompanyCommunityStatus(companyId) {
 // only for hiding the UI from non-founders.
 export const FOUNDER_EMAIL = "skinners1309@gmail.com";
 
+// GLOBAL BILLING PAUSE — flip to false when Stripe (or the new processor) is
+// back and we want to re-enforce trial / seat-limit / paywall gates. While
+// true:
+//   - the TrialEndedGate is skipped so nobody gets locked out
+//   - the BillingPanel replaces "Upgrade" with a friendly pause banner
+//   - the checkout / manage buttons are hidden
+//   - the seat-limit RPC still exists but we've also set every company's
+//     seat_limit to NULL via SQL so no invite can trip the cap during the pause
+// One line to flip back. See docs/billing-pause.md if we ever add one.
+export const BILLING_PAUSED = true;
+
 export function isFounderUser(session) {
   const email = session?.user?.email;
   if (!email) return false;

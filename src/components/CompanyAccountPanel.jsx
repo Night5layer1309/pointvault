@@ -25,6 +25,7 @@ import {
   acceptInvite,
   buildCompanyInviteUrl,
   createCompany,
+  BILLING_PAUSED,
   createCompanyInviteLink,
   createOpenCompanyInviteLink,
   fetchCompanyBilling,
@@ -629,6 +630,32 @@ export function BillingPanel({ company, canAdmin }) {
   const [loading, setLoading] = useState(false);
   const [working, setWorking] = useState(false);
   const [error, setError] = useState("");
+
+  // Billing is paused globally (see BILLING_PAUSED in companyAccounts.js).
+  // Everyone gets full free access while we sort out the payment processor.
+  if (BILLING_PAUSED) {
+    return (
+      <Card className="rounded-3xl border-0 shadow-lg">
+        <CardContent className="p-5">
+          <div className="flex items-center gap-2 font-bold text-slate-950 dark:text-slate-100">
+            <CreditCard size={18} /> Billing
+          </div>
+          <div className="mt-3 rounded-2xl border border-emerald-200 bg-emerald-50 p-4 text-sm leading-6 text-emerald-900 dark:border-emerald-800 dark:bg-emerald-950 dark:text-emerald-100">
+            <div className="font-black">Billing is paused — free access for everyone.</div>
+            <p className="mt-1 text-xs">
+              We're rebuilding our payment setup. Every company on PointVault has full access to all
+              features (unlimited seats, community sharing, imports, everything) at no cost until we
+              flip the switch back on. Existing subscribers won't be charged during this pause. We'll
+              give plenty of notice before billing resumes and let you keep whatever pricing you had.
+            </p>
+            <p className="mt-2 text-xs opacity-80">
+              Questions? Reach out at support@pointvault.app.
+            </p>
+          </div>
+        </CardContent>
+      </Card>
+    );
+  }
 
   const load = async () => {
     if (!company?.id || !canAdmin) return;

@@ -53,6 +53,7 @@ import { SettingsTab } from "@/components/SettingsTab";
 import {
   addCommunityPointNote,
   addPointObservation,
+  BILLING_PAUSED,
   fetchCompanyBilling,
   fetchAllCompanyPoints,
   fetchNearbyCompanyPoints,
@@ -1903,7 +1904,10 @@ export default function SurveyPointAppPrototype() {
     );
   }
 
-  if (billingLoaded && billing && billing.has_access === false) {
+  // Global billing pause: while true, every user gets full access regardless
+  // of trial status or subscription state. Flip BILLING_PAUSED back to false
+  // in @/lib/companyAccounts to re-enforce the paywall.
+  if (!BILLING_PAUSED && billingLoaded && billing && billing.has_access === false) {
     return <TrialEndedGate company={activeCompany} membership={activeMembership} billing={billing} />;
   }
 
